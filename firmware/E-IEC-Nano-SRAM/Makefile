@@ -39,7 +39,8 @@ SRCS = $(SRCDIR)/main.c \
        $(SRCDIR)/cbm_dos.c \
        $(SRCDIR)/fastload.c \
        $(SRCDIR)/fastload_jiffydos.c \
-       $(SRCDIR)/fastload_burst.c
+       $(SRCDIR)/fastload_burst.c \
+       $(SRCDIR)/fastload_epyx.c
 
 OBJS = $(SRCS:.c=.o)
 
