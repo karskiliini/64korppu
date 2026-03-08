@@ -12,6 +12,7 @@ Vaihtoehto D:n parannettu versio. Microchipin 23LC1024 SPI SRAM (128 KB) ratkais
 |---|---|
 | [kuvaus.md](kuvaus.md) | SRAM-vaihtoehdot, muistikartta, SPI-väylän jakaminen, 74HC595-ohjaus, firmware-rakenne |
 | [piirikaavio.md](piirikaavio.md) | 23LC1024 + 74HC595 SPI-kytkentä, kokonaispiirikaavio, bypass-kondensaattorit |
+| [diagnostiikkapadit.md](diagnostiikkapadit.md) | 14 testipistettä: signaalit, odotetut tasot, mittausohje, vianetsintä |
 
 ## Piirikaavio
 
