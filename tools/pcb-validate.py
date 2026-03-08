@@ -3,10 +3,11 @@
 Validoi KiCad PCB-tiedoston ennen Freerouting-reititystä.
 
 Tarkistukset:
-  1. Kaikki padit piirilevyn rajojen sisällä
-  2. Ei päällekkäisiä padeja eri komponenttien välillä
-  3. Ei ;; -kommentteja (KiCad 9 hylkää ne)
-  4. Sulkujen tasapaino
+  1. Ei ;; -kommentteja (KiCad 9 hylkää ne)
+  2. Sulkujen tasapaino
+  3. Kaikki padit piirilevyn rajojen sisällä
+  4. Ei päällekkäisiä padeja eri komponenttien välillä
+  5. Komponenttien fyysiset rungot eivät törmää toisiinsa
 
 Käyttö:
   ./tools/pcb-validate.py hardware/E-IEC-Nano-SRAM/64korppu-E.kicad_pcb
@@ -17,6 +18,24 @@ import sys
 
 MIN_PAD_CLEARANCE = 0.3  # mm, minimietäisyys padien reunojen välillä
 BOARD_MARGIN = 0.5       # mm, minimi etäisyys padista levyn reunaan
+BODY_CLEARANCE = 1.0     # mm, minimietäisyys komponenttien runkojen välillä
+
+# Komponenttien fyysiset runkokoot (mm) suhteessa footprintin keskipisteeseen
+# Muoto: (dx_neg, dx_pos, dy_neg, dy_pos) = kuinka paljon runko ulottuu
+# keskipisteestä vasemmalle, oikealle, ylös, alas
+COMPONENT_BODIES = {
+    'BarrelJack_Horizontal':                        (-5, 9, -4.5, 8),
+    'DIN-6_IEC_Vertical':                           (-8, 8, -8, 8),
+    'PinHeader_2x15_P2.54mm_Vertical':              (-2, 5, -1.5, 36.5),
+    'IDC-Header_2x17_P2.54mm_Vertical':             (-4.5, 4.5, -2, 42),
+    'DIP-8_W7.62mm_Socket':                         (-1.5, 9, -1.5, 9),
+    'DIP-16_W7.62mm_Socket':                        (-1.5, 9, -1.5, 20),
+    'R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal': (-1.5, 11.5, -1.5, 1.5),
+    'LED_D3.0mm':                                   (-2, 2, -2, 2),
+    'C_Disc_D5.0mm_W2.5mm_P5.00mm':                (-1, 6, -2.5, 2.5),
+    'CP_Radial_D5.0mm_P2.00mm':                     (-1, 4, -2.5, 2.5),
+    'MountingHole_3.2mm_M3':                        (-2, 2, -2, 2),
+}
 
 
 def parse_pcb(filepath):
@@ -62,7 +81,9 @@ def get_footprints_and_pads(content):
     fp_matches = list(fp_pattern.finditer(content))
 
     all_pads = []
+    all_footprints = []
     for i, m in enumerate(fp_matches):
+        fp_name = m.group(1)
         fp_x = float(m.group(2))
         fp_y = float(m.group(3))
         fp_rot = float(m.group(4)) if m.group(4) else 0
@@ -73,6 +94,17 @@ def get_footprints_and_pads(content):
 
         ref_match = re.search(r'"Reference" "([^"]+)"', fp_block)
         ref = ref_match.group(1) if ref_match else '??'
+
+        # Footprint name: strip library prefix ("lib:Name" -> "Name")
+        short_name = fp_name.split(':')[-1] if ':' in fp_name else fp_name
+
+        all_footprints.append({
+            'ref': ref,
+            'name': short_name,
+            'x': fp_x,
+            'y': fp_y,
+            'rot': fp_rot,
+        })
 
         for sec in re.split(r'(?=\(pad )', fp_block):
             if not sec.startswith('(pad'):
@@ -98,7 +130,7 @@ def get_footprints_and_pads(content):
                     'size': float(sz_m.group(1)) if sz_m else 1.6,
                     'net': net_m.group(2) if net_m else '',
                 })
-    return all_pads
+    return all_pads, all_footprints
 
 
 def check_boundary(pads, boundary):
@@ -138,6 +170,58 @@ def check_overlaps(pads):
     return errors
 
 
+def get_body_rect(fp):
+    """Laske komponentin fyysisen rungon suorakaide (x1,y1,x2,y2).
+
+    Käyttää COMPONENT_BODIES-taulukkoa jos footprint tunnetaan,
+    muuten laskee bounding boxin padeista + 1mm marginaali.
+    """
+    name = fp['name']
+    x, y = fp['x'], fp['y']
+
+    if name in COMPONENT_BODIES:
+        dx_neg, dx_pos, dy_neg, dy_pos = COMPONENT_BODIES[name]
+        return (x + dx_neg, y + dy_neg, x + dx_pos, y + dy_pos)
+
+    # Tuntematon footprint — palautetaan None, ohitetaan tarkistuksessa
+    return None
+
+
+def rects_overlap(r1, r2, clearance):
+    """Tarkista ovatko kaksi suorakaidetta päällekkäin (clearance huomioiden)."""
+    x1a, y1a, x2a, y2a = r1
+    x1b, y1b, x2b, y2b = r2
+    return not (x2a + clearance <= x1b or
+                x2b + clearance <= x1a or
+                y2a + clearance <= y1b or
+                y2b + clearance <= y1a)
+
+
+def check_body_collisions(footprints):
+    """Tarkista ettei komponenttien fyysiset rungot törmää toisiinsa."""
+    errors = []
+    rects = []
+    for fp in footprints:
+        rect = get_body_rect(fp)
+        if rect:
+            rects.append((fp, rect))
+
+    for i in range(len(rects)):
+        for j in range(i + 1, len(rects)):
+            fp1, r1 = rects[i]
+            fp2, r2 = rects[j]
+            if rects_overlap(r1, r2, BODY_CLEARANCE):
+                # Laske todellinen overlap
+                ox = min(r1[2], r2[2]) - max(r1[0], r2[0])
+                oy = min(r1[3], r2[3]) - max(r1[1], r2[1])
+                errors.append(
+                    f"  {fp1['ref']} ({fp1['name']}) <-> {fp2['ref']} ({fp2['name']}) "
+                    f"törmäys! overlap={max(ox,0):.1f}x{max(oy,0):.1f}mm "
+                    f"[{fp1['ref']}:({r1[0]:.0f},{r1[1]:.0f})-({r1[2]:.0f},{r1[3]:.0f}) "
+                    f"{fp2['ref']}:({r2[0]:.0f},{r2[1]:.0f})-({r2[2]:.0f},{r2[3]:.0f})]")
+    return errors
+
+
 def main():
     if len(sys.argv) < 2:
         print(f"Käyttö: {sys.argv[0]} <pcb-tiedosto>")
@@ -169,8 +253,8 @@ def main():
 
     # 3. Piirilevyn rajat
     boundary = get_board_boundary(content)
-    pads = get_footprints_and_pads(content)
-    print(f"Löytyi {len(pads)} padia")
+    pads, footprints = get_footprints_and_pads(content)
+    print(f"Löytyi {len(pads)} padia, {len(footprints)} komponenttia")
 
     if boundary:
         bx1, by1, bx2, by2 = boundary
@@ -197,6 +281,19 @@ def main():
         ok = False
     else:
         print("OK: Ei pad-päällekkäisyyksiä")
+
+    # 5. Komponenttien runkojen törmäykset
+    errs = check_body_collisions(footprints)
+    if errs:
+        print(f"VIRHE: {len(errs)} runkotörmäystä:")
+        for e in errs[:10]:
+            print(e)
+        if len(errs) > 10:
+            print(f"  ... ja {len(errs) - 10} muuta")
+        ok = False
+    else:
+        known = sum(1 for fp in footprints if fp['name'] in COMPONENT_BODIES)
+        print(f"OK: Ei runkotörmäyksiä ({known}/{len(footprints)} tunnettua komponenttia)")
 
     if ok:
         print("\nVALIDOINTI OK — valmis reititykseen")
