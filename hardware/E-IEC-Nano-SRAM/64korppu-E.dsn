@@ -1,4 +1,4 @@
-(pcb "/Users/marski/git/64korppu/hardware/E-IEC-Nano-SRAM/64korppu-E.dsn"
+(pcb "hardware/E-IEC-Nano-SRAM/64korppu-E.dsn"
   (parser
     (string_quote ")
     (space_in_quoted_tokens on)
@@ -21,10 +21,10 @@
       )
     )
     (boundary
-      (path pcb 0  200000 -170000  100000 -170000  100000 -100000  200000 -100000
-            200000 -170000)
+      (path pcb 0  215000 -195000  100000 -195000  100000 -100000  215000 -100000
+            215000 -195000)
     )
-    (plane GND (polygon B.Cu 0  100000 -100000  200000 -100000  200000 -170000  100000 -170000
+    (plane GND (polygon B.Cu 0  100000 -100000  215000 -100000  215000 -195000  100000 -195000
             100000 -100000))
     (via "Via[0-1]_600:300_um")
     (rule
@@ -47,11 +47,15 @@
       (place R1 118000.000000 -115000.000000 front 0.000000 (PN 1k))
       (place R2 118000.000000 -120000.000000 front 0.000000 (PN 1k))
       (place R3 118000.000000 -125000.000000 front 0.000000 (PN 1k))
-      (place R4 118000.000000 -130000.000000 front 0.000000 (PN 1k))
+      (place R4 120000.000000 -134000.000000 front 0.000000 (PN 1k))
       (place R5 132000.000000 -115000.000000 front 0.000000 (PN 4.7k))
       (place R6 132000.000000 -120000.000000 front 0.000000 (PN 4.7k))
       (place R7 132000.000000 -125000.000000 front 0.000000 (PN 4.7k))
-      (place R8 125000.000000 -162000.000000 front 0.000000 (PN 330))
+      (place R8 125000.000000 -180000.000000 front 0.000000 (PN 330))
+      (place R9 160000.000000 -136000.000000 front 0.000000 (PN 10k))
+      (place R10 160000.000000 -141000.000000 front 0.000000 (PN 10k))
+      (place R11 160000.000000 -146000.000000 front 0.000000 (PN 10k))
+      (place R12 160000.000000 -151000.000000 front 0.000000 (PN 10k))
     )
     (component Connector_PinHeader_2.54mm:PinHeader_2x15_P2.54mm_Vertical
       (place U1 152000.000000 -122000.000000 front 0.000000 (PN Arduino_Nano))
@@ -60,30 +64,24 @@
       (place U2 120000.000000 -148000.000000 front 0.000000 (PN 23LC1024))
     )
     (component "Package_DIP:DIP-16_W7.62mm_Socket"
-      (place U3 152000.000000 -152000.000000 front 0.000000 (PN 74HC595))
+      (place U3 170000.000000 -158000.000000 front 0.000000 (PN 74HC595))
     )
     (component "Connector_IDC:IDC-Header_2x17_P2.54mm_Vertical"
       (place J2 185000.000000 -130000.000000 front 0.000000 (PN Floppy_34pin))
     )
     (component LED_THT:LED_D3.0mm
-      (place D1 118000.000000 -162000.000000 front 0.000000 (PN LED))
-    )
-    (component Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal::1
-      (place R9 176000.000000 -142000.000000 front 90.000000 (PN 10k))
-      (place R10 179000.000000 -142000.000000 front 90.000000 (PN 10k))
-      (place R11 182000.000000 -142000.000000 front 90.000000 (PN 10k))
-      (place R12 185000.000000 -142000.000000 front 90.000000 (PN 10k))
+      (place D1 118000.000000 -180000.000000 front 0.000000 (PN LED))
     )
     (component Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm
-      (place C1 145000.000000 -162000.000000 front 0.000000 (PN 100nF))
-      (place C2 155000.000000 -162000.000000 front 0.000000 (PN 100nF))
-      (place C3 165000.000000 -162000.000000 front 0.000000 (PN 100nF))
+      (place C1 145000.000000 -182000.000000 front 0.000000 (PN 100nF))
+      (place C2 155000.000000 -182000.000000 front 0.000000 (PN 100nF))
+      (place C3 165000.000000 -182000.000000 front 0.000000 (PN 100nF))
     )
     (component MountingHole:MountingHole_3.2mm_M3
       (place H1 103000.000000 -103000.000000 front 0.000000 (PN MountingHole))
-      (place H2 197000.000000 -103000.000000 front 0.000000 (PN MountingHole))
-      (place H3 103000.000000 -167000.000000 front 0.000000 (PN MountingHole))
-      (place H4 197000.000000 -167000.000000 front 0.000000 (PN MountingHole))
+      (place H2 212000.000000 -103000.000000 front 0.000000 (PN MountingHole))
+      (place H3 103000.000000 -192000.000000 front 0.000000 (PN MountingHole))
+      (place H4 212000.000000 -192000.000000 front 0.000000 (PN MountingHole))
     )
   )
   (library
@@ -209,10 +207,6 @@
     (image LED_THT:LED_D3.0mm
       (pin Rect[A]Pad_1600.000000x1600.000000_um 1 0 0)
       (pin Oval[A]Pad_1600.000000x1600.000000_um 2 2540 0)
-    )
-    (image Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal::1
-      (pin Rect[A]Pad_1600.000000x1600.000000_um (rotate 270) 1 0 0)
-      (pin Oval[A]Pad_1600.000000x1600.000000_um (rotate 270) 2 10160 0)
     )
     (image Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm
       (pin Rect[A]Pad_1600.000000x1600.000000_um 1 0 0)
