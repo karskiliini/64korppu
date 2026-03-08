@@ -96,8 +96,10 @@ ok "Reitit ja zonet OK"
 info "Ajetaan DRC..."
 DRC_OUT=$(kicad-cli pcb drc --severity-all "$PCB" 2>&1)
 echo "$DRC_OUT"
-VIOLATIONS=$(echo "$DRC_OUT" | grep -oP 'Found \K\d+(?= violations)' || echo "0")
-UNCONNECTED=$(echo "$DRC_OUT" | grep -oP 'Found \K\d+(?= unconnected)' || echo "0")
+VIOLATIONS=$(echo "$DRC_OUT" | sed -n 's/.*Found \([0-9]*\) violations.*/\1/p')
+VIOLATIONS=${VIOLATIONS:-0}
+UNCONNECTED=$(echo "$DRC_OUT" | sed -n 's/.*Found \([0-9]*\) unconnected.*/\1/p')
+UNCONNECTED=${UNCONNECTED:-0}
 if [ "$UNCONNECTED" -gt 5 ]; then
     warn "Paljon kytkemättömiä: $UNCONNECTED (>5 — tarkista!)"
 fi
