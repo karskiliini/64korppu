@@ -13,6 +13,10 @@ Dedikoidun FDC-piirin (Floppy Disk Controller) avulla saadaan nopein mahdollinen
 | [kuvaus.md](kuvaus.md) | Arkkitehtuuri, FDC-rekisterikartta, osoitedekoodaus, ROM-rakenne |
 | [piirikaavio.md](piirikaavio.md) | 74LS138 dekooderi, 74LS245 dataväylä buffer, FDC-kytkentä, 28C64 ROM |
 
+## Piirikaavio
+
+![Vaihtoehto B: Expansion + FDC](img/piirikaavio.png)
+
 ## Avainominaisuudet
 
 - **Nopein vaihtoehto** — FDC hoitaa MFM-koodauksen laitteistotasolla

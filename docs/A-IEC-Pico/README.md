@@ -13,6 +13,10 @@ Pico emuloi CBM-levyasemaa (device #8) IEC-väylällä ja ohjaa PC-korppuasemaa 
 | [kuvaus.md](kuvaus.md) | Arkkitehtuuri, komponenttilista, GPIO-kartta, firmware-rakenne, plussat/miinukset |
 | [piirikaavio.md](piirikaavio.md) | Yksityiskohtainen piirikaavio: BSS138 level shifter, floppy-kytkentä, Pico pinout |
 
+## Piirikaavio
+
+![Vaihtoehto A: IEC + Pico](img/piirikaavio.png)
+
 ## Avainominaisuudet
 
 - **Ei vaadi C64:n modifiointia** — toimii suoraan LOAD/SAVE-komennoilla

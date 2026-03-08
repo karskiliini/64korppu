@@ -12,6 +12,8 @@ Standardi PC:n 1.44MB 3.5" HD-korppuasema Commodore 64 -tietokoneeseen. FAT12-le
 | [D](docs/D-IEC-Nano/) | IEC + Arduino Nano | IEC-sarjaväylä | ~8€ | 2 KB | **Ei yhtään** | Halvin |
 | [E](docs/E-IEC-Nano-SRAM/) | IEC + Arduino Nano + SPI SRAM | IEC-sarjaväylä | ~10-13€ | 2+128 KB | **Ei yhtään** | Nano tehostettuna |
 
+![Vaihtoehtojen vertailu](docs/vertailu.png)
+
 ## Arkkitehtuuri
 
 ```

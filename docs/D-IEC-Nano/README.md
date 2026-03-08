@@ -13,6 +13,10 @@ Arduino Nano emuloi CBM-levyasemaa IEC-väylällä. Nanon 5V-logiikka on suoraan
 | [kuvaus.md](kuvaus.md) | Arkkitehtuuri, GPIO-kartta, Timer1 ICP MFM-strategia, RAM-rajoitukset |
 | [piirikaavio.md](piirikaavio.md) | Suora 5V-kytkentä, ICP1 MFM-luku, komponenttilista |
 
+## Piirikaavio
+
+![Vaihtoehto D: IEC + Nano](img/piirikaavio.png)
+
 ## Avainominaisuudet
 
 - **Ei tasonmuuntimia!** — 5V natiivi, yksinkertaisin kytkentä

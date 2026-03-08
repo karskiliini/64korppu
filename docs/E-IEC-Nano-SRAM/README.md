@@ -13,6 +13,10 @@ Vaihtoehto D:n parannettu versio. Microchipin 23LC1024 SPI SRAM (128 KB) ratkais
 | [kuvaus.md](kuvaus.md) | SRAM-vaihtoehdot, muistikartta, SPI-väylän jakaminen, 74HC595-ohjaus, firmware-rakenne |
 | [piirikaavio.md](piirikaavio.md) | 23LC1024 + 74HC595 SPI-kytkentä, kokonaispiirikaavio, bypass-kondensaattorit |
 
+## Piirikaavio
+
+![Vaihtoehto E: Nano + SRAM](img/piirikaavio.png)
+
 ## Avainominaisuudet
 
 - **128 KB SRAM** — koko raita, FAT-taulu ja puskurit mahtuvat

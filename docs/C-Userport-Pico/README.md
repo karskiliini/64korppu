@@ -13,6 +13,10 @@ Pico kommunikoi C64:n kanssa user portin 8-bittisen rinnakkaisväylän kautta. N
 | [kuvaus.md](kuvaus.md) | Arkkitehtuuri, user port protokolla, CIA2-kytkennät, C64-ajurikoodi |
 | [piirikaavio.md](piirikaavio.md) | 74LVC245 dataväylä, BSS138 handshake, floppy-kytkentä, DIR-ohjaus |
 
+## Piirikaavio
+
+![Vaihtoehto C: User port + Pico](img/piirikaavio.png)
+
 ## Avainominaisuudet
 
 - **Nopeampi kuin IEC** — 8-bittinen rinnakkaissiirto (~10-20 KB/s)
