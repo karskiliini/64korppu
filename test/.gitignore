@@ -1,6 +1,10 @@
 # Compiled test binaries
 test_d64
 test_d64.dSYM/
+test_cbmfs
+test_cbmfs.dSYM/
+test_format
+test_format.dSYM/
 
 # Generated test data
 TEST.D64
