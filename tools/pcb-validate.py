@@ -35,6 +35,7 @@ COMPONENT_BODIES = {
     'C_Disc_D5.0mm_W2.5mm_P5.00mm':                (-1, 6, -2.5, 2.5),
     'CP_Radial_D5.0mm_P2.00mm':                     (-1, 4, -2.5, 2.5),
     'MountingHole_3.2mm_M3':                        (-2, 2, -2, 2),
+    'TestPoint_Pad_D1.5_SMD':                       (-0.75, 0.75, -0.75, 0.75),
 }
 
 

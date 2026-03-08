@@ -99,6 +99,22 @@
       (place H3 103000.000000 -157000.000000 front 0.000000 (PN MountingHole))
       (place H4 167000.000000 -157000.000000 front 0.000000 (PN MountingHole))
     )
+    (component TestPoint:TestPoint_Pad_D1.5_SMD
+      (place TP4 103000.000000 -115500.000000 back 180.000000 (PN IEC_CLK))
+      (place TP1 103000.000000 -108000.000000 back 180.000000 (PN GND))
+      (place TP2 103000.000000 -110500.000000 back 180.000000 (PN +5V))
+      (place TP7 103000.000000 -123000.000000 back 180.000000 (PN FLOPPY_STEP))
+      (place TP14 103000.000000 -140500.000000 back 180.000000 (PN SPI_CS_SRAM))
+      (place TP10 103000.000000 -130500.000000 back 180.000000 (PN FLOPPY_SIDE1))
+      (place TP6 103000.000000 -120500.000000 back 180.000000 (PN FLOPPY_MOTOR))
+      (place TP12 103000.000000 -135500.000000 back 180.000000 (PN SPI_MOSI))
+      (place TP13 103000.000000 -138000.000000 back 180.000000 (PN SPI_MISO))
+      (place TP5 103000.000000 -118000.000000 back 180.000000 (PN IEC_DATA))
+      (place TP11 103000.000000 -133000.000000 back 180.000000 (PN SPI_SCK))
+      (place TP3 103000.000000 -113000.000000 back 180.000000 (PN IEC_ATN))
+      (place TP9 103000.000000 -128000.000000 back 180.000000 (PN FLOPPY_WDATA))
+      (place TP8 103000.000000 -125500.000000 back 180.000000 (PN FLOPPY_RDATA))
+    )
   )
   (library
     (image Connector_BarrelJack:BarrelJack_Horizontal
@@ -231,6 +247,13 @@
     (image MountingHole:MountingHole_3.2mm_M3
       (pin Round[A]Pad_6000.000000_um 1 0 0)
     )
+    (image TestPoint:TestPoint_Pad_D1.5_SMD
+      (pin Round[T]Pad_1500.000000_um 1 0 0)
+    )
+    (padstack Round[T]Pad_1500.000000_um
+      (shape (circle F.Cu 1500))
+      (attach off)
+    )
     (padstack Round[A]Pad_6000.000000_um
       (shape (circle F.Cu 6000))
       (shape (circle In1.Cu 6000))
@@ -313,35 +336,35 @@
     (net GND
       (pins J3-3 C4-2 J1-1 J1-2 J1-SH J1-SH@1 U1-4 U1-7 U2-4 U3-8 U3-13 J2-1 J2-3
         J2-5 J2-7 J2-9 J2-11 J2-13 J2-15 J2-17 J2-19 J2-21 J2-23 J2-25 J2-27 J2-29
-        J2-31 J2-33 D1-2 C1-2 C2-2 C3-2)
+        J2-31 J2-33 D1-2 C1-2 C2-2 C3-2 TP1-1)
     )
     (net +5V
       (pins J3-1 J3-2 C4-1 R5-1 R6-1 R7-1 U1-8 U2-7 U2-8 U3-10 U3-16 R9-1 R10-1 R11-1
-        R12-1 C1-1 C2-1 C3-1)
+        R12-1 C1-1 C2-1 C3-1 TP2-1)
     )
     (net SPI_MOSI
-      (pins U1-27 U2-5 U3-14)
+      (pins U1-27 U2-5 U3-14 TP12-1)
     )
     (net SPI_MISO
-      (pins U1-29 U2-2)
+      (pins U1-29 U2-2 TP13-1)
     )
     (net SPI_SCK
-      (pins U1-30 U2-6 U3-11)
+      (pins U1-30 U2-6 U3-11 TP11-1)
     )
     (net SPI_CS_SRAM
-      (pins U1-25 U2-1)
+      (pins U1-25 U2-1 TP14-1)
     )
     (net LATCH_595
       (pins U1-17 U3-12)
     )
     (net IEC_ATN
-      (pins J1-3 R1-1)
+      (pins J1-3 R1-1 TP3-1)
     )
     (net IEC_CLK
-      (pins J1-4 R2-1)
+      (pins J1-4 R2-1 TP4-1)
     )
     (net IEC_DATA
-      (pins J1-5 R3-1)
+      (pins J1-5 R3-1 TP5-1)
     )
     (net IEC_RESET
       (pins J1-6 R4-1)
@@ -359,10 +382,10 @@
       (pins R4-2 U1-15)
     )
     (net FLOPPY_WDATA
-      (pins U1-19 J2-22)
+      (pins U1-19 J2-22 TP9-1)
     )
     (net FLOPPY_RDATA
-      (pins U1-21 J2-30 R11-2)
+      (pins U1-21 J2-30 R11-2 TP8-1)
     )
     (net FLOPPY_TRK00
       (pins U1-24 J2-26 R9-2)
@@ -383,19 +406,19 @@
       (pins U3-3 J2-12)
     )
     (net FLOPPY_MOTOR
-      (pins U3-4 J2-16)
+      (pins U3-4 J2-16 TP6-1)
     )
     (net FLOPPY_DIR
       (pins U3-5 J2-18)
     )
     (net FLOPPY_STEP
-      (pins U3-6 J2-20)
+      (pins U3-6 J2-20 TP7-1)
     )
     (net FLOPPY_WGATE
       (pins U3-7 J2-24)
     )
     (net FLOPPY_SIDE1
-      (pins U3-15 J2-32)
+      (pins U3-15 J2-32 TP10-1)
     )
     (net LED_ANODE
       (pins U1-14 R8-1)
