@@ -63,6 +63,8 @@ ACCEPTABLE_PATTERNS = [
     ('copper_edge_clearance', 'H2', None),
     ('copper_edge_clearance', 'H3', None),
     ('copper_edge_clearance', 'H4', None),
+    # DIN-6 shield pad touching board edge (connector placed at edge)
+    ('copper_edge_clearance', 'J1', None),
 ]
 
 
