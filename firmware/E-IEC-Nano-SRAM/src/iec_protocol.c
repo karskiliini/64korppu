@@ -1,6 +1,8 @@
 #include "iec_protocol.h"
 #include "cbm_dos.h"
 #include "config.h"
+#include "fastload.h"
+#include "fastload_jiffydos.h"
 
 #ifdef __AVR__
 
@@ -231,7 +233,10 @@ void iec_service(void) {
             uint8_t byte;
             bool eoi;
             if (cbm_dos_talk_byte(device.current_sa, &byte, &eoi)) {
-                if (!iec_send_byte(byte, eoi)) {
+                const fastload_protocol_t *fl = fastload_active();
+                bool ok = fl && fl->send_byte ? fl->send_byte(byte, eoi)
+                                               : iec_send_byte(byte, eoi);
+                if (!ok) {
                     device.state = IEC_STATE_IDLE;
                     iec_release_all();
                 }
@@ -265,11 +270,13 @@ void iec_service(void) {
                 }
                 device.state = IEC_STATE_IDLE;
                 iec_release_all();
+                fastload_reset();
             }
         } else if (cmd == IEC_CMD_UNTALK) {
             if (device.state == IEC_STATE_TALKER) {
                 device.state = IEC_STATE_IDLE;
                 iec_release_all();
+                fastload_reset();
             }
         } else if ((cmd & 0xE0) == IEC_CMD_LISTEN) {
             if (device_num == device.device_number) {
@@ -298,7 +305,13 @@ void iec_service(void) {
         }
     }
 
-    /* ATN released */
+    /* ATN released — detect fast-load protocol for talker mode */
+    if (device.state == IEC_STATE_TALKER) {
+        fastload_detect();
+        const fastload_protocol_t *fl = fastload_active();
+        if (fl && fl->on_atn_end) fl->on_atn_end();
+    }
+
     if (device.state == IEC_STATE_LISTENER) {
         uint8_t byte;
         bool eoi;

@@ -13,6 +13,10 @@
 #include "fat12.h"
 #include "iec_protocol.h"
 #include "cbm_dos.h"
+#include "fastload.h"
+#include "fastload_jiffydos.h"
+#include "fastload_burst.h"
+#include "fastload_epyx.h"
 
 /*
  * 64korppu — Alternative E: Arduino Nano + 23LC1024 SPI SRAM
@@ -110,6 +114,13 @@ int main(void) {
     uart_puts("IEC device #8\r\n");
     iec_init(IEC_DEFAULT_DEVICE);
     cbm_dos_init();
+
+    /* Initialize fast-load protocols */
+    fastload_init();
+    fastload_jiffydos_register();
+    fastload_burst_register();
+    fastload_epyx_register();
+    uart_puts("Fastload OK\r\n");
 
     /* Enable interrupts */
     sei();

@@ -3,6 +3,8 @@
 #include "fat12.h"
 #include "config.h"
 #include "sram.h"
+#include "fastload_burst.h"
+#include "fastload_epyx.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -269,6 +271,10 @@ void cbm_dos_execute_command(const char *cmd, uint8_t len) {
     for (int i = 0; i < cmd_len; i++) {
         cmd_buf[i] = toupper((unsigned char)cmd_buf[i]);
     }
+
+    /* Check for fast-load protocol commands */
+    if (fastload_burst_check_command(cmd_buf, cmd_len)) return;
+    if (fastload_epyx_check_command((const uint8_t *)cmd_buf, cmd_len)) return;
 
     switch (cmd_buf[0]) {
         case 'S': {
