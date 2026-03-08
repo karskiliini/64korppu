@@ -1,0 +1,2173 @@
+(kicad_pcb
+	(version 20240108)
+	(generator "pcbnew")
+	(generator_version "8.0")
+	(general
+		(thickness 1.6)
+		(legacy_teardrops no)
+	)
+	(paper "A4")
+	(layers
+		(0 "F.Cu" signal)
+		(31 "B.Cu" signal)
+		(32 "B.Adhes" user "B.Adhesive")
+		(33 "F.Adhes" user "F.Adhesive")
+		(34 "B.Paste" user)
+		(35 "F.Paste" user)
+		(36 "B.SilkS" user "B.Silkscreen")
+		(37 "F.SilkS" user "F.Silkscreen")
+		(38 "B.Mask" user "B.Mask")
+		(39 "F.Mask" user "F.Mask")
+		(40 "Dwgs.User" user "User.Drawings")
+		(41 "Cmts.User" user "User.Comments")
+		(42 "B.CrtYd" user "B.Courtyard")
+		(43 "F.CrtYd" user "F.Courtyard")
+		(44 "Edge.Cuts" user)
+		(45 "Margin" user)
+		(46 "B.Fab" user)
+		(47 "F.Fab" user)
+	)
+	(setup
+		(pad_to_mask_clearance 0)
+		(allow_soldermask_bridges_in_footprints no)
+		(pcbplotparams
+			(layerselection 0x00010fc_ffffffff)
+			(plot_on_all_layers_selection 0x0000000_00000000)
+			(disableapertmacros no)
+			(usegerberextensions no)
+			(usegerberattributes yes)
+			(usegerberadvancedattributes yes)
+			(creategerberjobfile yes)
+			(dashed_line_dash_ratio 12.000000)
+			(dashed_line_gap_ratio 3.000000)
+			(svgprecision 4)
+			(plotframeref no)
+			(viasonmask no)
+			(mode 1)
+			(useauxorigin no)
+			(hpglpennumber 1)
+			(hpglpenspeed 20)
+			(hpglpendiameter 15.000000)
+			(pdf_front_fp_property_popups yes)
+			(pdf_back_fp_property_popups yes)
+			(dxfpolygonmode yes)
+			(dxfimperialunits yes)
+			(dxfusepcbnewfont yes)
+			(psnegative no)
+			(psa4output no)
+			(plotreference yes)
+			(plotvalue no)
+			(plotfptext no)
+			(plotinvisibletext no)
+			(sketchpadsonfab no)
+			(subtractmaskfromsilk no)
+			(outputformat 1)
+			(mirror no)
+			(drillshape 1)
+			(scaleselection 1)
+			(outputdirectory "")
+		)
+	)
+
+	;; Net declarations
+	(net 0 "")
+	(net 1 "GND")
+	(net 2 "+5V")
+	(net 3 "SPI_MOSI")
+	(net 4 "SPI_MISO")
+	(net 5 "SPI_SCK")
+	(net 6 "SPI_CS_SRAM")
+	(net 7 "LATCH_595")
+	(net 8 "IEC_ATN")
+	(net 9 "IEC_CLK")
+	(net 10 "IEC_DATA")
+	(net 11 "IEC_RESET")
+	(net 12 "NANO_D2")
+	(net 13 "NANO_D3")
+	(net 14 "NANO_D4")
+	(net 15 "NANO_D5")
+	(net 16 "FLOPPY_WDATA")
+	(net 17 "FLOPPY_RDATA")
+	(net 18 "FLOPPY_TRK00")
+	(net 19 "FLOPPY_WPT")
+	(net 20 "FLOPPY_DSKCHG")
+	(net 21 "FLOPPY_DENSITY")
+	(net 22 "FLOPPY_MOTEA")
+	(net 23 "FLOPPY_DRVSEL")
+	(net 24 "FLOPPY_MOTOR")
+	(net 25 "FLOPPY_DIR")
+	(net 26 "FLOPPY_STEP")
+	(net 27 "FLOPPY_WGATE")
+	(net 28 "FLOPPY_SIDE1")
+	(net 29 "LED_ANODE")
+	(net 30 "LED_CATHODE")
+
+	;; ============================================================
+	;; J3 - Barrel Jack (DC power input) at top center
+	;; ============================================================
+	(footprint "Connector_BarrelJack:BarrelJack_Horizontal"
+		(layer "F.Cu")
+		(uuid "b0000001-0001-4000-8000-000000000001")
+		(at 142 103)
+		(property "Reference" "J3"
+			(at 3 -3 0)
+			(layer "F.SilkS")
+			(uuid "b0000001-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "DC_Jack"
+			(at 3 8 0)
+			(layer "F.Fab")
+			(uuid "b0000001-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 2.0 2.0)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b0000001-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 6 0)
+			(size 2.0 2.0)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b0000001-0001-4000-8000-000000000011")
+		)
+		(pad "3" thru_hole oval
+			(at 3 5)
+			(size 2.0 2.0)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b0000001-0001-4000-8000-000000000012")
+		)
+	)
+
+	;; ============================================================
+	;; C4 - Electrolytic capacitor near J3
+	;; ============================================================
+	(footprint "Capacitor_THT:CP_Radial_D5.0mm_P2.00mm"
+		(layer "F.Cu")
+		(uuid "b0000002-0001-4000-8000-000000000001")
+		(at 152 106)
+		(property "Reference" "C4"
+			(at 1 -3 0)
+			(layer "F.SilkS")
+			(uuid "b0000002-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "100uF"
+			(at 1 3 0)
+			(layer "F.Fab")
+			(uuid "b0000002-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b0000002-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 2.0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b0000002-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; J1 - DIN-6 IEC connector (left side)
+	;; ============================================================
+	(footprint "64korppu-E:DIN-6_IEC_Vertical"
+		(layer "F.Cu")
+		(uuid "b0000003-0001-4000-8000-000000000001")
+		(at 108 125)
+		(property "Reference" "J1"
+			(at 0 -9 0)
+			(layer "F.SilkS")
+			(uuid "b0000003-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "DIN-6_IEC"
+			(at 0 9 0)
+			(layer "F.Fab")
+			(uuid "b0000003-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at -3.5 4.0)
+			(size 1.8 1.8)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b0000003-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 3.5 4.0)
+			(size 1.8 1.8)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b0000003-0001-4000-8000-000000000011")
+		)
+		(pad "3" thru_hole oval
+			(at -5.0 0)
+			(size 1.8 1.8)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 8 "IEC_ATN")
+			(uuid "b0000003-0001-4000-8000-000000000012")
+		)
+		(pad "4" thru_hole oval
+			(at 0 -4.0)
+			(size 1.8 1.8)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 9 "IEC_CLK")
+			(uuid "b0000003-0001-4000-8000-000000000013")
+		)
+		(pad "5" thru_hole oval
+			(at 5.0 0)
+			(size 1.8 1.8)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 10 "IEC_DATA")
+			(uuid "b0000003-0001-4000-8000-000000000014")
+		)
+		(pad "6" thru_hole oval
+			(at 0 0)
+			(size 1.8 1.8)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 11 "IEC_RESET")
+			(uuid "b0000003-0001-4000-8000-000000000015")
+		)
+		(pad "SH" thru_hole oval
+			(at -7.5 0)
+			(size 3.0 2.0)
+			(drill 1.5)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b0000003-0001-4000-8000-000000000020")
+		)
+		(pad "SH" thru_hole oval
+			(at 7.5 0)
+			(size 3.0 2.0)
+			(drill 1.5)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b0000003-0001-4000-8000-000000000021")
+		)
+	)
+
+	;; ============================================================
+	;; R1 - IEC ATN series resistor (IEC_ATN to NANO_D2)
+	;; ============================================================
+	(footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+		(layer "F.Cu")
+		(uuid "b0000004-0001-4000-8000-000000000001")
+		(at 108 112)
+		(property "Reference" "R1"
+			(at 5 -2 0)
+			(layer "F.SilkS")
+			(uuid "b0000004-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "1k"
+			(at 5 2 0)
+			(layer "F.Fab")
+			(uuid "b0000004-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 8 "IEC_ATN")
+			(uuid "b0000004-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 10.16 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 12 "NANO_D2")
+			(uuid "b0000004-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; R2 - IEC CLK series resistor (IEC_CLK to NANO_D3)
+	;; ============================================================
+	(footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+		(layer "F.Cu")
+		(uuid "b0000005-0001-4000-8000-000000000001")
+		(at 108 115)
+		(property "Reference" "R2"
+			(at 5 -2 0)
+			(layer "F.SilkS")
+			(uuid "b0000005-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "1k"
+			(at 5 2 0)
+			(layer "F.Fab")
+			(uuid "b0000005-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 9 "IEC_CLK")
+			(uuid "b0000005-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 10.16 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 13 "NANO_D3")
+			(uuid "b0000005-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; R3 - IEC DATA series resistor (IEC_DATA to NANO_D4)
+	;; ============================================================
+	(footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+		(layer "F.Cu")
+		(uuid "b0000006-0001-4000-8000-000000000001")
+		(at 108 118)
+		(property "Reference" "R3"
+			(at 5 -2 0)
+			(layer "F.SilkS")
+			(uuid "b0000006-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "1k"
+			(at 5 2 0)
+			(layer "F.Fab")
+			(uuid "b0000006-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 10 "IEC_DATA")
+			(uuid "b0000006-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 10.16 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 14 "NANO_D4")
+			(uuid "b0000006-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; R4 - IEC RESET series resistor (IEC_RESET to NANO_D5)
+	;; ============================================================
+	(footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+		(layer "F.Cu")
+		(uuid "b0000007-0001-4000-8000-000000000001")
+		(at 108 121)
+		(property "Reference" "R4"
+			(at 5 -2 0)
+			(layer "F.SilkS")
+			(uuid "b0000007-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "1k"
+			(at 5 2 0)
+			(layer "F.Fab")
+			(uuid "b0000007-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 11 "IEC_RESET")
+			(uuid "b0000007-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 10.16 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 15 "NANO_D5")
+			(uuid "b0000007-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; R5 - IEC pullup ATN (+5V to NANO_D2)
+	;; ============================================================
+	(footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+		(layer "F.Cu")
+		(uuid "b0000008-0001-4000-8000-000000000001")
+		(at 122 112)
+		(property "Reference" "R5"
+			(at 5 -2 0)
+			(layer "F.SilkS")
+			(uuid "b0000008-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "4.7k"
+			(at 5 2 0)
+			(layer "F.Fab")
+			(uuid "b0000008-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b0000008-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 10.16 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 12 "NANO_D2")
+			(uuid "b0000008-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; R6 - IEC pullup CLK (+5V to NANO_D3)
+	;; ============================================================
+	(footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+		(layer "F.Cu")
+		(uuid "b0000009-0001-4000-8000-000000000001")
+		(at 122 115)
+		(property "Reference" "R6"
+			(at 5 -2 0)
+			(layer "F.SilkS")
+			(uuid "b0000009-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "4.7k"
+			(at 5 2 0)
+			(layer "F.Fab")
+			(uuid "b0000009-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b0000009-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 10.16 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 13 "NANO_D3")
+			(uuid "b0000009-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; R7 - IEC pullup DATA (+5V to NANO_D4)
+	;; ============================================================
+	(footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+		(layer "F.Cu")
+		(uuid "b000000a-0001-4000-8000-000000000001")
+		(at 122 118)
+		(property "Reference" "R7"
+			(at 5 -2 0)
+			(layer "F.SilkS")
+			(uuid "b000000a-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "4.7k"
+			(at 5 2 0)
+			(layer "F.Fab")
+			(uuid "b000000a-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b000000a-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 10.16 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 14 "NANO_D4")
+			(uuid "b000000a-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; U1 - Arduino Nano 2x15 pin header (center)
+	;; KiCad 2xN zigzag: odd pins left (x=0), even pins right (x=2.54)
+	;; Left col (odd):  D1/TX(1), D0/RX(3), RST(5), GND(7), D2(9), D3(11),
+	;;   D4(13), D5(15), D6(17), D7(19), D8(21), D9(23), D10(25), D11(27), D12(29)
+	;; Right col (even): VIN(2), GND(4), RST(6), +5V(8), A7(10), A6(12),
+	;;   A5(14), A4(16), A3(18), A2(20), A1(22), A0(24), AREF(26), 3V3(28), D13(30)
+	;; ============================================================
+	(footprint "Connector_PinHeader_2.54mm:PinHeader_2x15_P2.54mm_Vertical"
+		(layer "F.Cu")
+		(uuid "b000000b-0001-4000-8000-000000000001")
+		(at 142 118)
+		(property "Reference" "U1"
+			(at 1.27 -2 0)
+			(layer "F.SilkS")
+			(uuid "b000000b-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "Arduino_Nano"
+			(at 1.27 37.6 0)
+			(layer "F.Fab")
+			(uuid "b000000b-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		;; Pin 1: D1/TX (left col, row 0) - unconnected
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000b-0001-4000-8000-000000000010")
+		)
+		;; Pin 2: VIN (right col, row 0) - unconnected
+		(pad "2" thru_hole oval
+			(at 2.54 0)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000b-0001-4000-8000-000000000011")
+		)
+		;; Pin 3: D0/RX (left col, row 1) - unconnected
+		(pad "3" thru_hole oval
+			(at 0 2.54)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000b-0001-4000-8000-000000000012")
+		)
+		;; Pin 4: GND (right col, row 1)
+		(pad "4" thru_hole oval
+			(at 2.54 2.54)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000b-0001-4000-8000-000000000013")
+		)
+		;; Pin 5: RST (left col, row 2) - unconnected
+		(pad "5" thru_hole oval
+			(at 0 5.08)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000b-0001-4000-8000-000000000014")
+		)
+		;; Pin 6: RST (right col, row 2) - unconnected
+		(pad "6" thru_hole oval
+			(at 2.54 5.08)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000b-0001-4000-8000-000000000015")
+		)
+		;; Pin 7: GND (left col, row 3)
+		(pad "7" thru_hole oval
+			(at 0 7.62)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000b-0001-4000-8000-000000000016")
+		)
+		;; Pin 8: +5V (right col, row 3)
+		(pad "8" thru_hole oval
+			(at 2.54 7.62)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b000000b-0001-4000-8000-000000000017")
+		)
+		;; Pin 9: D2 (left col, row 4) - NANO_D2
+		(pad "9" thru_hole oval
+			(at 0 10.16)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 12 "NANO_D2")
+			(uuid "b000000b-0001-4000-8000-000000000018")
+		)
+		;; Pin 10: A7 (right col, row 4) - unconnected
+		(pad "10" thru_hole oval
+			(at 2.54 10.16)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000b-0001-4000-8000-000000000019")
+		)
+		;; Pin 11: D3 (left col, row 5) - NANO_D3
+		(pad "11" thru_hole oval
+			(at 0 12.7)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 13 "NANO_D3")
+			(uuid "b000000b-0001-4000-8000-00000000001a")
+		)
+		;; Pin 12: A6 (right col, row 5) - unconnected
+		(pad "12" thru_hole oval
+			(at 2.54 12.7)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000b-0001-4000-8000-00000000001b")
+		)
+		;; Pin 13: D4 (left col, row 6) - NANO_D4
+		(pad "13" thru_hole oval
+			(at 0 15.24)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 14 "NANO_D4")
+			(uuid "b000000b-0001-4000-8000-00000000001c")
+		)
+		;; Pin 14: A5 (right col, row 6) - LED_ANODE
+		(pad "14" thru_hole oval
+			(at 2.54 15.24)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 29 "LED_ANODE")
+			(uuid "b000000b-0001-4000-8000-00000000001d")
+		)
+		;; Pin 15: D5 (left col, row 7) - NANO_D5
+		(pad "15" thru_hole oval
+			(at 0 17.78)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 15 "NANO_D5")
+			(uuid "b000000b-0001-4000-8000-00000000001e")
+		)
+		;; Pin 16: A4 (right col, row 7) - unconnected
+		(pad "16" thru_hole oval
+			(at 2.54 17.78)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000b-0001-4000-8000-00000000001f")
+		)
+		;; Pin 17: D6 (left col, row 8) - LATCH_595
+		(pad "17" thru_hole oval
+			(at 0 20.32)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 7 "LATCH_595")
+			(uuid "b000000b-0001-4000-8000-000000000020")
+		)
+		;; Pin 18: A3 (right col, row 8) - unconnected
+		(pad "18" thru_hole oval
+			(at 2.54 20.32)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000b-0001-4000-8000-000000000021")
+		)
+		;; Pin 19: D7 (left col, row 9) - FLOPPY_WDATA
+		(pad "19" thru_hole oval
+			(at 0 22.86)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 16 "FLOPPY_WDATA")
+			(uuid "b000000b-0001-4000-8000-000000000022")
+		)
+		;; Pin 20: A2 (right col, row 9) - FLOPPY_DSKCHG
+		(pad "20" thru_hole oval
+			(at 2.54 22.86)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 20 "FLOPPY_DSKCHG")
+			(uuid "b000000b-0001-4000-8000-000000000023")
+		)
+		;; Pin 21: D8 (left col, row 10) - FLOPPY_RDATA
+		(pad "21" thru_hole oval
+			(at 0 25.4)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 17 "FLOPPY_RDATA")
+			(uuid "b000000b-0001-4000-8000-000000000024")
+		)
+		;; Pin 22: A1 (right col, row 10) - FLOPPY_WPT
+		(pad "22" thru_hole oval
+			(at 2.54 25.4)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 19 "FLOPPY_WPT")
+			(uuid "b000000b-0001-4000-8000-000000000025")
+		)
+		;; Pin 23: D9 (left col, row 11) - unconnected
+		(pad "23" thru_hole oval
+			(at 0 27.94)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000b-0001-4000-8000-000000000026")
+		)
+		;; Pin 24: A0 (right col, row 11) - FLOPPY_TRK00
+		(pad "24" thru_hole oval
+			(at 2.54 27.94)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 18 "FLOPPY_TRK00")
+			(uuid "b000000b-0001-4000-8000-000000000027")
+		)
+		;; Pin 25: D10 (left col, row 12) - SPI_CS_SRAM
+		(pad "25" thru_hole oval
+			(at 0 30.48)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 6 "SPI_CS_SRAM")
+			(uuid "b000000b-0001-4000-8000-000000000028")
+		)
+		;; Pin 26: AREF (right col, row 12) - unconnected
+		(pad "26" thru_hole oval
+			(at 2.54 30.48)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000b-0001-4000-8000-000000000029")
+		)
+		;; Pin 27: D11 (left col, row 13) - SPI_MOSI
+		(pad "27" thru_hole oval
+			(at 0 33.02)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 3 "SPI_MOSI")
+			(uuid "b000000b-0001-4000-8000-00000000002a")
+		)
+		;; Pin 28: 3V3 (right col, row 13) - unconnected
+		(pad "28" thru_hole oval
+			(at 2.54 33.02)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000b-0001-4000-8000-00000000002b")
+		)
+		;; Pin 29: D12 (left col, row 14) - SPI_MISO
+		(pad "29" thru_hole oval
+			(at 0 35.56)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 4 "SPI_MISO")
+			(uuid "b000000b-0001-4000-8000-00000000002c")
+		)
+		;; Pin 30: D13 (right col, row 14) - SPI_SCK
+		(pad "30" thru_hole oval
+			(at 2.54 35.56)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 5 "SPI_SCK")
+			(uuid "b000000b-0001-4000-8000-00000000002d")
+		)
+	)
+
+	;; ============================================================
+	;; U2 - 23LC1024 SPI SRAM (DIP-8)
+	;; Pin 1 at (0,0), pins go down left side, up right side
+	;; ============================================================
+	(footprint "Package_DIP:DIP-8_W7.62mm_Socket"
+		(layer "F.Cu")
+		(uuid "b000000c-0001-4000-8000-000000000001")
+		(at 115 138)
+		(property "Reference" "U2"
+			(at 3.81 -2 0)
+			(layer "F.SilkS")
+			(uuid "b000000c-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "23LC1024"
+			(at 3.81 10.16 0)
+			(layer "F.Fab")
+			(uuid "b000000c-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		;; Pin 1: /CS (SPI_CS_SRAM)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 6 "SPI_CS_SRAM")
+			(uuid "b000000c-0001-4000-8000-000000000010")
+		)
+		;; Pin 2: SO (SPI_MISO)
+		(pad "2" thru_hole oval
+			(at 0 2.54)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 4 "SPI_MISO")
+			(uuid "b000000c-0001-4000-8000-000000000011")
+		)
+		;; Pin 3: NC
+		(pad "3" thru_hole oval
+			(at 0 5.08)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000c-0001-4000-8000-000000000012")
+		)
+		;; Pin 4: VSS (GND)
+		(pad "4" thru_hole oval
+			(at 0 7.62)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000c-0001-4000-8000-000000000013")
+		)
+		;; Pin 5: SI (SPI_MOSI)
+		(pad "5" thru_hole oval
+			(at 7.62 7.62)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 3 "SPI_MOSI")
+			(uuid "b000000c-0001-4000-8000-000000000014")
+		)
+		;; Pin 6: SCK (SPI_SCK)
+		(pad "6" thru_hole oval
+			(at 7.62 5.08)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 5 "SPI_SCK")
+			(uuid "b000000c-0001-4000-8000-000000000015")
+		)
+		;; Pin 7: /HOLD (+5V)
+		(pad "7" thru_hole oval
+			(at 7.62 2.54)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b000000c-0001-4000-8000-000000000016")
+		)
+		;; Pin 8: VCC (+5V)
+		(pad "8" thru_hole oval
+			(at 7.62 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b000000c-0001-4000-8000-000000000017")
+		)
+	)
+
+	;; ============================================================
+	;; U3 - 74HC595 shift register (DIP-16)
+	;; Pin 1 at (0,0), pins go down left side, up right side
+	;; ============================================================
+	(footprint "Package_DIP:DIP-16_W7.62mm_Socket"
+		(layer "F.Cu")
+		(uuid "b000000d-0001-4000-8000-000000000001")
+		(at 148 142)
+		(property "Reference" "U3"
+			(at 3.81 -2 0)
+			(layer "F.SilkS")
+			(uuid "b000000d-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "74HC595"
+			(at 3.81 19.8 0)
+			(layer "F.Fab")
+			(uuid "b000000d-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		;; Pin 1: QB (FLOPPY_DENSITY)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 21 "FLOPPY_DENSITY")
+			(uuid "b000000d-0001-4000-8000-000000000010")
+		)
+		;; Pin 2: QC (FLOPPY_MOTEA)
+		(pad "2" thru_hole oval
+			(at 0 2.54)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 22 "FLOPPY_MOTEA")
+			(uuid "b000000d-0001-4000-8000-000000000011")
+		)
+		;; Pin 3: QD (FLOPPY_DRVSEL)
+		(pad "3" thru_hole oval
+			(at 0 5.08)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 23 "FLOPPY_DRVSEL")
+			(uuid "b000000d-0001-4000-8000-000000000012")
+		)
+		;; Pin 4: QE (FLOPPY_MOTOR)
+		(pad "4" thru_hole oval
+			(at 0 7.62)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 24 "FLOPPY_MOTOR")
+			(uuid "b000000d-0001-4000-8000-000000000013")
+		)
+		;; Pin 5: QF (FLOPPY_DIR)
+		(pad "5" thru_hole oval
+			(at 0 10.16)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 25 "FLOPPY_DIR")
+			(uuid "b000000d-0001-4000-8000-000000000014")
+		)
+		;; Pin 6: QG (FLOPPY_STEP)
+		(pad "6" thru_hole oval
+			(at 0 12.7)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 26 "FLOPPY_STEP")
+			(uuid "b000000d-0001-4000-8000-000000000015")
+		)
+		;; Pin 7: QH (FLOPPY_WGATE)
+		(pad "7" thru_hole oval
+			(at 0 15.24)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 27 "FLOPPY_WGATE")
+			(uuid "b000000d-0001-4000-8000-000000000016")
+		)
+		;; Pin 8: GND
+		(pad "8" thru_hole oval
+			(at 0 17.78)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000d-0001-4000-8000-000000000017")
+		)
+		;; Pin 9: QH' (NC - serial out, unconnected)
+		(pad "9" thru_hole oval
+			(at 7.62 17.78)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000d-0001-4000-8000-000000000018")
+		)
+		;; Pin 10: /SRCLR (+5V)
+		(pad "10" thru_hole oval
+			(at 7.62 15.24)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b000000d-0001-4000-8000-000000000019")
+		)
+		;; Pin 11: SRCLK (SPI_SCK)
+		(pad "11" thru_hole oval
+			(at 7.62 12.7)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 5 "SPI_SCK")
+			(uuid "b000000d-0001-4000-8000-00000000001a")
+		)
+		;; Pin 12: RCLK (LATCH_595)
+		(pad "12" thru_hole oval
+			(at 7.62 10.16)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 7 "LATCH_595")
+			(uuid "b000000d-0001-4000-8000-00000000001b")
+		)
+		;; Pin 13: /OE (GND)
+		(pad "13" thru_hole oval
+			(at 7.62 7.62)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000d-0001-4000-8000-00000000001c")
+		)
+		;; Pin 14: SER (SPI_MOSI)
+		(pad "14" thru_hole oval
+			(at 7.62 5.08)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 3 "SPI_MOSI")
+			(uuid "b000000d-0001-4000-8000-00000000001d")
+		)
+		;; Pin 15: QA (FLOPPY_SIDE1)
+		(pad "15" thru_hole oval
+			(at 7.62 2.54)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 28 "FLOPPY_SIDE1")
+			(uuid "b000000d-0001-4000-8000-00000000001e")
+		)
+		;; Pin 16: VCC (+5V)
+		(pad "16" thru_hole oval
+			(at 7.62 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b000000d-0001-4000-8000-00000000001f")
+		)
+	)
+
+	;; ============================================================
+	;; J2 - 34-pin IDC header (2x17) for floppy interface (right side)
+	;; Odd pins (col 1) = GND, even pins (col 2) = signals
+	;; ============================================================
+	(footprint "Connector_IDC:IDC-Header_2x17_P2.54mm_Vertical"
+		(layer "F.Cu")
+		(uuid "b000000e-0001-4000-8000-000000000001")
+		(at 175 118)
+		(property "Reference" "J2"
+			(at 1.27 -2 0)
+			(layer "F.SilkS")
+			(uuid "b000000e-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "Floppy_34pin"
+			(at 1.27 42.8 0)
+			(layer "F.Fab")
+			(uuid "b000000e-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		;; Pin 1: GND
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-000000000010")
+		)
+		;; Pin 2: FLOPPY_DENSITY
+		(pad "2" thru_hole oval
+			(at 2.54 0)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 21 "FLOPPY_DENSITY")
+			(uuid "b000000e-0001-4000-8000-000000000011")
+		)
+		;; Pin 3: GND
+		(pad "3" thru_hole oval
+			(at 0 2.54)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-000000000012")
+		)
+		;; Pin 4: NC
+		(pad "4" thru_hole oval
+			(at 2.54 2.54)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000e-0001-4000-8000-000000000013")
+		)
+		;; Pin 5: GND
+		(pad "5" thru_hole oval
+			(at 0 5.08)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-000000000014")
+		)
+		;; Pin 6: NC
+		(pad "6" thru_hole oval
+			(at 2.54 5.08)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000e-0001-4000-8000-000000000015")
+		)
+		;; Pin 7: GND
+		(pad "7" thru_hole oval
+			(at 0 7.62)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-000000000016")
+		)
+		;; Pin 8: NC
+		(pad "8" thru_hole oval
+			(at 2.54 7.62)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000e-0001-4000-8000-000000000017")
+		)
+		;; Pin 9: GND
+		(pad "9" thru_hole oval
+			(at 0 10.16)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-000000000018")
+		)
+		;; Pin 10: FLOPPY_MOTEA
+		(pad "10" thru_hole oval
+			(at 2.54 10.16)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 22 "FLOPPY_MOTEA")
+			(uuid "b000000e-0001-4000-8000-000000000019")
+		)
+		;; Pin 11: GND
+		(pad "11" thru_hole oval
+			(at 0 12.7)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-00000000001a")
+		)
+		;; Pin 12: FLOPPY_DRVSEL
+		(pad "12" thru_hole oval
+			(at 2.54 12.7)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 23 "FLOPPY_DRVSEL")
+			(uuid "b000000e-0001-4000-8000-00000000001b")
+		)
+		;; Pin 13: GND
+		(pad "13" thru_hole oval
+			(at 0 15.24)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-00000000001c")
+		)
+		;; Pin 14: NC
+		(pad "14" thru_hole oval
+			(at 2.54 15.24)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 0 "")
+			(uuid "b000000e-0001-4000-8000-00000000001d")
+		)
+		;; Pin 15: GND
+		(pad "15" thru_hole oval
+			(at 0 17.78)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-00000000001e")
+		)
+		;; Pin 16: FLOPPY_MOTOR
+		(pad "16" thru_hole oval
+			(at 2.54 17.78)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 24 "FLOPPY_MOTOR")
+			(uuid "b000000e-0001-4000-8000-00000000001f")
+		)
+		;; Pin 17: GND
+		(pad "17" thru_hole oval
+			(at 0 20.32)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-000000000020")
+		)
+		;; Pin 18: FLOPPY_DIR
+		(pad "18" thru_hole oval
+			(at 2.54 20.32)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 25 "FLOPPY_DIR")
+			(uuid "b000000e-0001-4000-8000-000000000021")
+		)
+		;; Pin 19: GND
+		(pad "19" thru_hole oval
+			(at 0 22.86)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-000000000022")
+		)
+		;; Pin 20: FLOPPY_STEP
+		(pad "20" thru_hole oval
+			(at 2.54 22.86)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 26 "FLOPPY_STEP")
+			(uuid "b000000e-0001-4000-8000-000000000023")
+		)
+		;; Pin 21: GND
+		(pad "21" thru_hole oval
+			(at 0 25.4)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-000000000024")
+		)
+		;; Pin 22: FLOPPY_WDATA
+		(pad "22" thru_hole oval
+			(at 2.54 25.4)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 16 "FLOPPY_WDATA")
+			(uuid "b000000e-0001-4000-8000-000000000025")
+		)
+		;; Pin 23: GND
+		(pad "23" thru_hole oval
+			(at 0 27.94)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-000000000026")
+		)
+		;; Pin 24: FLOPPY_WGATE
+		(pad "24" thru_hole oval
+			(at 2.54 27.94)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 27 "FLOPPY_WGATE")
+			(uuid "b000000e-0001-4000-8000-000000000027")
+		)
+		;; Pin 25: GND
+		(pad "25" thru_hole oval
+			(at 0 30.48)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-000000000028")
+		)
+		;; Pin 26: FLOPPY_TRK00
+		(pad "26" thru_hole oval
+			(at 2.54 30.48)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 18 "FLOPPY_TRK00")
+			(uuid "b000000e-0001-4000-8000-000000000029")
+		)
+		;; Pin 27: GND
+		(pad "27" thru_hole oval
+			(at 0 33.02)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-00000000002a")
+		)
+		;; Pin 28: FLOPPY_WPT
+		(pad "28" thru_hole oval
+			(at 2.54 33.02)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 19 "FLOPPY_WPT")
+			(uuid "b000000e-0001-4000-8000-00000000002b")
+		)
+		;; Pin 29: GND
+		(pad "29" thru_hole oval
+			(at 0 35.56)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-00000000002c")
+		)
+		;; Pin 30: FLOPPY_RDATA
+		(pad "30" thru_hole oval
+			(at 2.54 35.56)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 17 "FLOPPY_RDATA")
+			(uuid "b000000e-0001-4000-8000-00000000002d")
+		)
+		;; Pin 31: GND
+		(pad "31" thru_hole oval
+			(at 0 38.1)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-00000000002e")
+		)
+		;; Pin 32: FLOPPY_SIDE1
+		(pad "32" thru_hole oval
+			(at 2.54 38.1)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 28 "FLOPPY_SIDE1")
+			(uuid "b000000e-0001-4000-8000-00000000002f")
+		)
+		;; Pin 33: GND
+		(pad "33" thru_hole oval
+			(at 0 40.64)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b000000e-0001-4000-8000-000000000030")
+		)
+		;; Pin 34: FLOPPY_DSKCHG
+		(pad "34" thru_hole oval
+			(at 2.54 40.64)
+			(size 1.7 1.7)
+			(drill 1.0)
+			(layers "*.Cu" "*.Mask")
+			(net 20 "FLOPPY_DSKCHG")
+			(uuid "b000000e-0001-4000-8000-000000000031")
+		)
+	)
+
+	;; ============================================================
+	;; R8 - LED current limiting resistor (LED_ANODE to LED_CATHODE)
+	;; ============================================================
+	(footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+		(layer "F.Cu")
+		(uuid "b000000f-0001-4000-8000-000000000001")
+		(at 118 148)
+		(property "Reference" "R8"
+			(at 5 -2 0)
+			(layer "F.SilkS")
+			(uuid "b000000f-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "330"
+			(at 5 2 0)
+			(layer "F.Fab")
+			(uuid "b000000f-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 29 "LED_ANODE")
+			(uuid "b000000f-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 10.16 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 30 "LED_CATHODE")
+			(uuid "b000000f-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; D1 - Status LED
+	;; ============================================================
+	(footprint "LED_THT:LED_D3.0mm"
+		(layer "F.Cu")
+		(uuid "b0000010-0001-4000-8000-000000000001")
+		(at 112 148)
+		(property "Reference" "D1"
+			(at 1.27 -2 0)
+			(layer "F.SilkS")
+			(uuid "b0000010-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "LED"
+			(at 1.27 2.5 0)
+			(layer "F.Fab")
+			(uuid "b0000010-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		;; Pad 1: Anode (LED_CATHODE - through R8)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 30 "LED_CATHODE")
+			(uuid "b0000010-0001-4000-8000-000000000010")
+		)
+		;; Pad 2: Cathode (GND)
+		(pad "2" thru_hole oval
+			(at 2.54 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b0000010-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; R9 - Floppy pullup for TRK00 (+5V to FLOPPY_TRK00)
+	;; ============================================================
+	(footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+		(layer "F.Cu")
+		(uuid "b0000011-0001-4000-8000-000000000001")
+		(at 165 130 90)
+		(property "Reference" "R9"
+			(at 5 -2 0)
+			(layer "F.SilkS")
+			(uuid "b0000011-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "10k"
+			(at 5 2 0)
+			(layer "F.Fab")
+			(uuid "b0000011-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b0000011-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 10.16 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 18 "FLOPPY_TRK00")
+			(uuid "b0000011-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; R10 - Floppy pullup for WPT (+5V to FLOPPY_WPT)
+	;; ============================================================
+	(footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+		(layer "F.Cu")
+		(uuid "b0000012-0001-4000-8000-000000000001")
+		(at 167 130 90)
+		(property "Reference" "R10"
+			(at 5 -2 0)
+			(layer "F.SilkS")
+			(uuid "b0000012-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "10k"
+			(at 5 2 0)
+			(layer "F.Fab")
+			(uuid "b0000012-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b0000012-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 10.16 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 19 "FLOPPY_WPT")
+			(uuid "b0000012-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; R11 - Floppy pullup for RDATA (+5V to FLOPPY_RDATA)
+	;; ============================================================
+	(footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+		(layer "F.Cu")
+		(uuid "b0000013-0001-4000-8000-000000000001")
+		(at 169 130 90)
+		(property "Reference" "R11"
+			(at 5 -2 0)
+			(layer "F.SilkS")
+			(uuid "b0000013-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "10k"
+			(at 5 2 0)
+			(layer "F.Fab")
+			(uuid "b0000013-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b0000013-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 10.16 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 17 "FLOPPY_RDATA")
+			(uuid "b0000013-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; R12 - Floppy pullup for DSKCHG (+5V to FLOPPY_DSKCHG)
+	;; ============================================================
+	(footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+		(layer "F.Cu")
+		(uuid "b0000014-0001-4000-8000-000000000001")
+		(at 171 130 90)
+		(property "Reference" "R12"
+			(at 5 -2 0)
+			(layer "F.SilkS")
+			(uuid "b0000014-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "10k"
+			(at 5 2 0)
+			(layer "F.Fab")
+			(uuid "b0000014-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b0000014-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 10.16 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 20 "FLOPPY_DSKCHG")
+			(uuid "b0000014-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; C1 - Bypass capacitor for Nano
+	;; ============================================================
+	(footprint "Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm"
+		(layer "F.Cu")
+		(uuid "b0000015-0001-4000-8000-000000000001")
+		(at 135 148)
+		(property "Reference" "C1"
+			(at 2.5 -2 0)
+			(layer "F.SilkS")
+			(uuid "b0000015-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "100nF"
+			(at 2.5 2.5 0)
+			(layer "F.Fab")
+			(uuid "b0000015-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b0000015-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 5.0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b0000015-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; C2 - Bypass capacitor for SRAM
+	;; ============================================================
+	(footprint "Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm"
+		(layer "F.Cu")
+		(uuid "b0000016-0001-4000-8000-000000000001")
+		(at 122 142)
+		(property "Reference" "C2"
+			(at 2.5 -2 0)
+			(layer "F.SilkS")
+			(uuid "b0000016-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "100nF"
+			(at 2.5 2.5 0)
+			(layer "F.Fab")
+			(uuid "b0000016-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b0000016-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 5.0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b0000016-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; C3 - Bypass capacitor for 74HC595
+	;; ============================================================
+	(footprint "Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm"
+		(layer "F.Cu")
+		(uuid "b0000017-0001-4000-8000-000000000001")
+		(at 155 148)
+		(property "Reference" "C3"
+			(at 2.5 -2 0)
+			(layer "F.SilkS")
+			(uuid "b0000017-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "100nF"
+			(at 2.5 2.5 0)
+			(layer "F.Fab")
+			(uuid "b0000017-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole rect
+			(at 0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 2 "+5V")
+			(uuid "b0000017-0001-4000-8000-000000000010")
+		)
+		(pad "2" thru_hole oval
+			(at 5.0 0)
+			(size 1.6 1.6)
+			(drill 0.8)
+			(layers "*.Cu" "*.Mask")
+			(net 1 "GND")
+			(uuid "b0000017-0001-4000-8000-000000000011")
+		)
+	)
+
+	;; ============================================================
+	;; H1 - Mounting hole (bottom-left)
+	;; ============================================================
+	(footprint "MountingHole:MountingHole_3.2mm_M3"
+		(layer "F.Cu")
+		(uuid "b0000018-0001-4000-8000-000000000001")
+		(at 103 103)
+		(property "Reference" "H1"
+			(at 0 -3.5 0)
+			(layer "F.SilkS")
+			(uuid "b0000018-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "MountingHole"
+			(at 0 3.5 0)
+			(layer "F.Fab")
+			(uuid "b0000018-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole circle
+			(at 0 0)
+			(size 6.0 6.0)
+			(drill 3.2)
+			(layers "*.Cu" "*.Mask")
+			(uuid "b0000018-0001-4000-8000-000000000010")
+		)
+	)
+
+	;; ============================================================
+	;; H2 - Mounting hole (bottom-right)
+	;; ============================================================
+	(footprint "MountingHole:MountingHole_3.2mm_M3"
+		(layer "F.Cu")
+		(uuid "b0000019-0001-4000-8000-000000000001")
+		(at 182 103)
+		(property "Reference" "H2"
+			(at 0 -3.5 0)
+			(layer "F.SilkS")
+			(uuid "b0000019-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "MountingHole"
+			(at 0 3.5 0)
+			(layer "F.Fab")
+			(uuid "b0000019-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole circle
+			(at 0 0)
+			(size 6.0 6.0)
+			(drill 3.2)
+			(layers "*.Cu" "*.Mask")
+			(uuid "b0000019-0001-4000-8000-000000000010")
+		)
+	)
+
+	;; ============================================================
+	;; H3 - Mounting hole (top-left)
+	;; ============================================================
+	(footprint "MountingHole:MountingHole_3.2mm_M3"
+		(layer "F.Cu")
+		(uuid "b000001a-0001-4000-8000-000000000001")
+		(at 103 152)
+		(property "Reference" "H3"
+			(at 0 -3.5 0)
+			(layer "F.SilkS")
+			(uuid "b000001a-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "MountingHole"
+			(at 0 3.5 0)
+			(layer "F.Fab")
+			(uuid "b000001a-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole circle
+			(at 0 0)
+			(size 6.0 6.0)
+			(drill 3.2)
+			(layers "*.Cu" "*.Mask")
+			(uuid "b000001a-0001-4000-8000-000000000010")
+		)
+	)
+
+	;; ============================================================
+	;; H4 - Mounting hole (top-right)
+	;; ============================================================
+	(footprint "MountingHole:MountingHole_3.2mm_M3"
+		(layer "F.Cu")
+		(uuid "b000001b-0001-4000-8000-000000000001")
+		(at 182 152)
+		(property "Reference" "H4"
+			(at 0 -3.5 0)
+			(layer "F.SilkS")
+			(uuid "b000001b-0001-4000-8000-000000000002")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Value" "MountingHole"
+			(at 0 3.5 0)
+			(layer "F.Fab")
+			(uuid "b000001b-0001-4000-8000-000000000003")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole circle
+			(at 0 0)
+			(size 6.0 6.0)
+			(drill 3.2)
+			(layers "*.Cu" "*.Mask")
+			(uuid "b000001b-0001-4000-8000-000000000010")
+		)
+	)
+
+	;; ============================================================
+	;; Board outline - 85mm x 55mm on Edge.Cuts
+	;; ============================================================
+	(gr_rect
+		(start 100 100)
+		(end 185 155)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill none)
+		(layer "Edge.Cuts")
+		(uuid "c0000001-0001-4000-8000-000000000001")
+	)
+
+	;; ============================================================
+	;; GND copper zone on back copper layer
+	;; ============================================================
+	(zone
+		(net 1)
+		(net_name "GND")
+		(layer "B.Cu")
+		(uuid "d0000001-0001-4000-8000-000000000001")
+		(hatch edge 0.5)
+		(connect_pads
+			(clearance 0.3)
+		)
+		(min_thickness 0.25)
+		(fill
+			(thermal_gap 0.5)
+			(thermal_bridge_width 0.5)
+		)
+		(polygon
+			(pts
+				(xy 100 100)
+				(xy 185 100)
+				(xy 185 155)
+				(xy 100 155)
+			)
+		)
+	)
+)
