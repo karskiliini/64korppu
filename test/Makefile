@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -g -O0
-INCLUDES = -I../firmware/include -I.
-FIRMWARE_SRC = ../firmware/src
+INCLUDES = -I../firmware/A-IEC-Pico/include -I.
+FIRMWARE_SRC = ../firmware/A-IEC-Pico/src
 
 .PHONY: all test clean
 
