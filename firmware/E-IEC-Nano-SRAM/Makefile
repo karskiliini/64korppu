@@ -36,7 +36,8 @@ SRCS = $(SRCDIR)/main.c \
        $(SRCDIR)/mfm_codec.c \
        $(SRCDIR)/fat12.c \
        $(SRCDIR)/iec_protocol.c \
-       $(SRCDIR)/cbm_dos.c
+       $(SRCDIR)/cbm_dos.c \
+       $(SRCDIR)/fastload.c
 
 OBJS = $(SRCS:.c=.o)
 
