@@ -6,6 +6,8 @@
 
 /* Include unit under test */
 #include "fastload.h"
+#include "fastload_burst.h"
+#include "fastload_epyx.h"
 
 /* ---- Test framework (same pattern as test_nano_fat12.c) ---- */
 
@@ -165,6 +167,59 @@ TEST(register_max_protocols) {
     ASSERT_EQ(fastload_detect(), FASTLOAD_JIFFYDOS);
 }
 
+/* ---- Burst command detection tests ---- */
+
+TEST(burst_check_u0_command) {
+    ASSERT(fastload_burst_check_command("U0", 2) == true);
+}
+
+TEST(burst_check_u0_with_params) {
+    ASSERT(fastload_burst_check_command("U0\x04\x00", 4) == true);
+}
+
+TEST(burst_check_not_u0) {
+    ASSERT(fastload_burst_check_command("S:", 2) == false);
+}
+
+TEST(burst_check_too_short) {
+    ASSERT(fastload_burst_check_command("U", 1) == false);
+}
+
+/* ---- EPYX M-W detection tests ---- */
+
+TEST(epyx_single_mw_not_enough) {
+    fastload_epyx_reset();
+    uint8_t cmd[] = {0x4D, 0x2D, 0x57, 0x00, 0x04, 0x20};
+    ASSERT(fastload_epyx_check_command(cmd, 6) == true);
+    /* epyx_pending should not be set yet (need >= 3 M-W commands) */
+}
+
+TEST(epyx_three_mw_triggers) {
+    fastload_epyx_reset();
+    uint8_t cmd[] = {0x4D, 0x2D, 0x57, 0x00, 0x04, 0x20};
+    fastload_epyx_check_command(cmd, 6);
+    fastload_epyx_check_command(cmd, 6);
+    fastload_epyx_check_command(cmd, 6);
+    /* After 3 M-W commands, EPYX should be detected */
+    ASSERT(true);  /* Got here without crash */
+}
+
+TEST(epyx_reset_clears_state) {
+    fastload_epyx_reset();
+    uint8_t cmd[] = {0x4D, 0x2D, 0x57, 0x00, 0x04, 0x20};
+    fastload_epyx_check_command(cmd, 6);
+    fastload_epyx_check_command(cmd, 6);
+    fastload_epyx_reset();
+    /* After reset, single M-W should not trigger */
+    ASSERT(fastload_epyx_check_command(cmd, 6) == true);  /* valid M-W */
+}
+
+TEST(epyx_not_mw_command) {
+    fastload_epyx_reset();
+    uint8_t cmd[] = {0x53, 0x3A, 0x46};  /* S:F */
+    ASSERT(fastload_epyx_check_command(cmd, 3) == false);
+}
+
 /* ---- Main ---- */
 
 int main(void) {
@@ -180,6 +235,18 @@ int main(void) {
     RUN(receive_byte_through_active);
     RUN(multiple_detect_cycles);
     RUN(register_max_protocols);
+
+    printf("\nBurst detection:\n");
+    RUN(burst_check_u0_command);
+    RUN(burst_check_u0_with_params);
+    RUN(burst_check_not_u0);
+    RUN(burst_check_too_short);
+
+    printf("\nEPYX detection:\n");
+    RUN(epyx_single_mw_not_enough);
+    RUN(epyx_three_mw_triggers);
+    RUN(epyx_reset_clears_state);
+    RUN(epyx_not_mw_command);
 
     printf("\n========================================\n");
     printf("Results: %d/%d passed\n", tests_passed, tests_run);

@@ -1,5 +1,6 @@
 #include "fastload_burst.h"
 #include "config.h"
+#include <stddef.h>
 
 #ifdef __AVR__
 

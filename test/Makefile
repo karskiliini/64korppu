@@ -26,7 +26,9 @@ test_format: test_format.c $(FIRMWARE_SRC)/format_detect.c
 test_nano_fat12: test_nano_fat12.c $(NANO_SRC)/fat12.c
 	$(CC) $(CFLAGS) $(NANO_INCLUDES) -o $@ $^
 
-FASTLOAD_SRC = ../firmware/E-IEC-Nano-SRAM/src/fastload.c
+FASTLOAD_SRC = ../firmware/E-IEC-Nano-SRAM/src/fastload.c \
+               ../firmware/E-IEC-Nano-SRAM/src/fastload_burst.c \
+               ../firmware/E-IEC-Nano-SRAM/src/fastload_epyx.c
 
 # Unit tests for Nano fastload registry
 test_nano_fastload: test_nano_fastload.c $(FASTLOAD_SRC)
