@@ -1,0 +1,58 @@
+;
+; MFM write PIO program for PC floppy disk.
+;
+; Generates flux transitions on /WDATA at precise timing.
+; Software pushes pulse timing values to the FIFO.
+;
+; Each value from FIFO represents the number of microseconds
+; until the next flux transition (4, 6, or 8 us for HD).
+;
+; /WGATE must be asserted (LOW) by GPIO before writing starts.
+;
+; Pin mapping:
+;   OUT/SET pin 0 = /WDATA (GP12)
+;   Side-set pin 0 = /WGATE (GP13) [optional, can be GPIO-controlled]
+;
+
+.program mfm_write
+
+; Pull timing value, generate a pulse, then delay
+; A pulse is a brief LOW on /WDATA (normally HIGH)
+
+.wrap_target
+    pull block              ; Get next pulse timing from FIFO
+    mov x, osr              ; Copy to counter
+
+    ; Generate flux transition pulse (~0.5us low)
+    set pins, 0             ; /WDATA = LOW (flux transition)
+    nop                     ; Hold for ~1us (at 1MHz PIO clock)
+    set pins, 1             ; /WDATA = HIGH
+
+    ; Delay for remaining time
+delay_loop:
+    jmp x-- delay_loop      ; Count down remaining microseconds
+.wrap
+
+% c-sdk {
+static inline void mfm_write_program_init(PIO pio, uint sm, uint offset,
+                                            uint wdata_pin) {
+    pio_sm_config c = mfm_write_program_get_default_config(offset);
+
+    // SET/OUT pin = /WDATA
+    sm_config_set_set_pins(&c, wdata_pin, 1);
+    sm_config_set_out_pins(&c, wdata_pin, 1);
+
+    // Configure pin as output, initially HIGH
+    pio_gpio_init(pio, wdata_pin);
+    pio_sm_set_consecutive_pindirs(pio, sm, wdata_pin, 1, true);
+    gpio_put(wdata_pin, 1);  // /WDATA inactive
+
+    // Shift OSR to the right, autopull disabled (we pull manually)
+    sm_config_set_out_shift(&c, true, false, 32);
+
+    // Clock divider: 125 MHz / 125 = 1 MHz → 1us per cycle
+    sm_config_set_clkdiv(&c, 125.0f);
+
+    pio_sm_init(pio, sm, offset, &c);
+}
+%}

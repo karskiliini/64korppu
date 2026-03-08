@@ -1,0 +1,298 @@
+================================================================================
+  VAIHTOEHTO C: User Port + Raspberry Pi Pico — PIIRIKAAVIO
+================================================================================
+
+
+================================================================================
+  C64 USER PORT (24-pin edge connector)
+================================================================================
+
+  User port pinout:
+
+  Yläpuoli (1-12):                 Alapuoli (A-N):
+  ──────────────────               ──────────────────
+   1  GND                          A  GND
+   2  +5V (max 100mA)              B  /FLAG2 (CIA2 → IRQ)
+   3  /RESET                       C  PB0  ($DD01 bit 0)
+   4  CNT1 (CIA1)                  D  PB1  ($DD01 bit 1)
+   5  SP1  (CIA1)                  E  PB2  ($DD01 bit 2)
+   6  CNT2 (CIA2)                  F  PB3  ($DD01 bit 3)
+   7  SP2  (CIA2)                  H  PB4  ($DD01 bit 4)
+   8  /PC2  (CIA2 handshake)       J  PB5  ($DD01 bit 5)
+   9  ATN IN (IEC)                 K  PB6  ($DD01 bit 6)
+  10  9VAC (ei käytetä)            L  PB7  ($DD01 bit 7)
+  11  9VAC (ei käytetä)            M  PA2  ($DD00 bit 2)
+  12  GND                          N  GND
+
+
+================================================================================
+  TASONMUUNNOS (74LVC245)
+================================================================================
+
+  C64 user port on 5V TTL, Pico on 3.3V CMOS.
+  Käytetään yhtä 74LVC245:ta 8-bittiselle dataväylälle.
+  PA2 ja /FLAG2 käsitellään MOSFET level shifterillä (BSS138).
+
+                +5V             +3.3V
+                 │                │
+      ┌──────────┴────────────────┴──────────┐
+      │            74LVC245                   │
+      │     Bidirectional Level Shifter       │
+      │                                       │
+      │  VCC_A (+5V)         VCC_B (+3.3V)    │
+      │                                       │
+      │  A1 ← PB0 (pin C)   B1 → GP0 (Pico)  │
+      │  A2 ← PB1 (pin D)   B2 → GP1         │
+      │  A3 ← PB2 (pin E)   B3 → GP2         │
+      │  A4 ← PB3 (pin F)   B4 → GP3         │
+      │  A5 ← PB4 (pin H)   B5 → GP4         │
+      │  A6 ← PB5 (pin J)   B6 → GP5         │
+      │  A7 ← PB6 (pin K)   B7 → GP6         │
+      │  A8 ← PB7 (pin L)   B8 → GP7         │
+      │                                       │
+      │  DIR ← GP26 (Pico)                    │
+      │  /OE ← GND (aina aktiivinen)          │
+      │                                       │
+      └───────────────────────────────────────┘
+
+  DIR-ohjaus (Pico GP26):
+    HIGH: A→B (C64 lähettää → Pico vastaanottaa)
+    LOW:  B→A (Pico lähettää → C64 vastaanottaa)
+
+  Pico vaihtaa DIR-pinniä protokollan mukaan:
+    - Odottaessa komentoa:       DIR=HIGH (C64→Pico)
+    - Lähettäessä dataa C64:lle: DIR=LOW  (Pico→C64)
+
+
+  Handshake-signaalit (BSS138 MOSFET level shift):
+  ═══════════════════════════════════════════════
+
+  PA2 (C64 → Pico strobe):
+
+        +5V           +3.3V
+         │              │
+        10kΩ           10kΩ
+         │              │
+  PA2 ───┤    BSS138    ├─── GP9 (Pico)
+  (pin M)│   G──D       │
+         │      │       │
+         │      S       │
+         │      │       │
+         │     GND      │
+         └──────────────┘
+
+
+  /FLAG2 (Pico → C64 strobe/IRQ):
+
+        +5V           +3.3V
+         │              │
+        10kΩ           10kΩ
+         │              │
+  /FLAG2─┤    BSS138    ├─── GP8 (Pico)
+  (pin B)│   G──D       │
+         │      │       │
+         │      S       │
+         │      │       │
+         │     GND      │
+         └──────────────┘
+
+
+================================================================================
+  FLOPPY-ASEMA (Pico ↔ 34-pin IDC)
+================================================================================
+
+  Samat kytkennät kuin vaihtoehdossa A, mutta eri GPIO-allokaatio:
+
+         Raspberry Pi Pico                    34-pin IDC
+        ┌─────────────────┐                  ┌──────────────────┐
+        │                 │                  │                  │
+        │ GP10 /DENSITY ──┼──────────────────┤  pin 2           │
+        │ GP11 /MOTEA ────┼──────────────────┤  pin 10          │
+        │ GP12 /DRVSEL ───┼──────────────────┤  pin 12          │
+        │ GP13 /MOTOR ────┼──────────────────┤  pin 16          │
+        │ GP14 /DIR ──────┼──────────────────┤  pin 18          │
+        │ GP15 /STEP ─────┼──────────────────┤  pin 20          │
+        │ GP16 /WDATA ────┼──────────────────┤  pin 22          │
+        │ GP17 /WGATE ────┼──────────────────┤  pin 24          │
+        │                 │    ┌─ 10kΩ─3V3   │                  │
+        │ GP18 /TRK00 ────┼────┤─────────────┤  pin 26          │
+        │                 │    ┌─ 10kΩ─3V3   │                  │
+        │ GP19 /WPT ──────┼────┤─────────────┤  pin 28          │
+        │                 │    ┌─ 10kΩ─3V3   │                  │
+        │ GP20 /RDATA ────┼────┤─────────────┤  pin 30          │
+        │ GP21 /SIDE1 ────┼──────────────────┤  pin 32          │
+        │                 │    ┌─ 10kΩ─3V3   │                  │
+        │ GP22 /DSKCHG ───┼────┤─────────────┤  pin 34          │
+        │                 │                  │                  │
+        │ GND ────────────┼──────────────────┤  pins 1,3,...,33 │
+        └─────────────────┘                  └──────────────────┘
+
+
+================================================================================
+  RASPBERRY PI PICO — PINOUT (Vaihtoehto C)
+================================================================================
+
+                        ┌──────────────────┐
+                  ┌─────┤  USB             ├─────┐
+                  │     └──────────────────┘     │
+         PB0 GP0  [1] │○                           ○│ [40] VBUS ← 5V
+         PB1 GP1  [2] │○                           ○│ [39] VSYS
+              GND [3] │○                           ○│ [38] GND
+         PB2 GP2  [4] │○                           ○│ [37] 3V3_EN
+         PB3 GP3  [5] │○                           ○│ [36] 3V3(OUT)
+         PB4 GP4  [6] │○                           ○│ [35] ADC_VREF
+         PB5 GP5  [7] │○                           ○│ [34] GP28
+              GND [8] │○                           ○│ [33] GND
+         PB6 GP6  [9] │○                           ○│ [32] GP27
+         PB7 GP7 [10] │○                           ○│ [31] GP26 ← 245 DIR
+      /FLAG2 GP8 [11] │○                           ○│ [30] RUN
+         PA2 GP9 [12] │○                           ○│ [29] GP22 ← DSKCHG
+              GND [13] │○                           ○│ [28] GND
+     DENSITY GP10[14] │○                           ○│ [27] GP21 ← SIDE1
+       MOTEA GP11[15] │○                           ○│ [26] GP20 ← RDATA
+      DRVSEL GP12[16] │○                           ○│ [25] GP19 ← WPT
+       MOTOR GP13[17] │○                           ○│ [24] GP18 ← TRK00
+              GND [18] │○                           ○│ [23] GND
+         DIR GP14[19] │○                           ○│ [22] GP17 ← WGATE
+        STEP GP15[20] │○                           ○│ [21] GP16 ← WDATA
+                  │     ┌──────────────────┐     │
+                  └─────┤      ┌──┐        ├─────┘
+                        │      │  │ BOOTSEL│
+                        └──────┴──┴────────┘
+
+  GPIO-yhteenveto:
+    GP0-GP7:   User port data (PB0-PB7) 74LVC245:n kautta
+    GP8:       /FLAG2 strobe (Pico → C64) BSS138:n kautta
+    GP9:       PA2 strobe (C64 → Pico) BSS138:n kautta
+    GP10-GP17: Floppy output-signaalit
+    GP18-GP20: Floppy input-signaalit (TRK00, WPT, RDATA)
+    GP21:      Floppy SIDE1 (output)
+    GP22:      Floppy DSKCHG (input)
+    GP26:      74LVC245 DIR-ohjaus
+    GP27-GP28: Vapaat
+
+
+================================================================================
+  VIRTALÄHDE
+================================================================================
+
+  User port tarjoaa +5V (max ~100mA) — riittää Picolle mutta EI floppylle.
+  Floppy-asema vaatii erillisen virtalähteen.
+
+     C64 User Port                    Pico
+    ┌────────────┐               ┌──────────┐
+    │ pin 2 +5V  ├─── valinnainen ┤ VBUS     │  (voi syöttää Picoa)
+    │ pin 1 GND  ├───────────────┤ GND      │
+    └────────────┘               └──────────┘
+         │
+         │  HUOM: Suositellaan erillistä
+         │  virtalähdettä Picolle ja floppylle
+         │
+    ┌────────────┐    ┌──────────┐    ┌──────────┐
+    │ Ulkoinen   │    │          │    │ Floppy   │
+    │ 5V/2A PSU ├────┤ VBUS ────┤────┤ +5V      │
+    │            │    │ Pico     │    │          │
+    │ GND ───────┤────┤ GND  ───┤────┤ GND      │
+    └────────────┘    └──────────┘    └──────────┘
+
+
+================================================================================
+  KOKONAISPIIRIKAAVIO
+================================================================================
+
+    C64                                              Floppy-asema
+  ┌──────┐                                          ┌───────────┐
+  │      │                                          │ PC 3.5"   │
+  │ User │    24-pin edge     74LVC245    Pico       │ HD 1.44MB │
+  │ Port ├────connector────┐  ┌──────┐  ┌────────┐  │           │
+  │      │                 │  │      │  │        │  │  34-pin   │
+  │ PB0  ├─────────────────┼──┤A1  B1├──┤GP0     │  │  IDC      │
+  │ PB1  ├─────────────────┼──┤A2  B2├──┤GP1     │  │           │
+  │ PB2  ├─────────────────┼──┤A3  B3├──┤GP2     │  │           │
+  │ PB3  ├─────────────────┼──┤A4  B4├──┤GP3     │  │           │
+  │ PB4  ├─────────────────┼──┤A5  B5├──┤GP4     │  │           │
+  │ PB5  ├─────────────────┼──┤A6  B6├──┤GP5     │  │           │
+  │ PB6  ├─────────────────┼──┤A7  B7├──┤GP6     │  │           │
+  │ PB7  ├─────────────────┼──┤A8  B8├──┤GP7     │  │           │
+  │      │                 │  │      │  │        │  │           │
+  │      │                 │  │DIR   ├──┤GP26    │  │           │
+  │      │                 │  │/OE─GND  │        │  │           │
+  │      │                 │  └──────┘  │        │  │           │
+  │      │                 │            │        │  │           │
+  │      │   BSS138 #1     │            │        │  │           │
+  │ PA2  ├─────┤G  D├──────┼────────────┤GP9     │  │           │
+  │      │   10kΩ  10kΩ    │            │        │  │           │
+  │      │                 │            │        │  │           │
+  │      │   BSS138 #2     │            │        │  │           │
+  │/FLAG2├─────┤G  D├──────┼────────────┤GP8     │  │           │
+  │      │   10kΩ  10kΩ    │            │        │  │           │
+  │      │                 │            │        │  │           │
+  │ GND  ├─────────────────┼────────GND─┤GND     │  │           │
+  │ +5V  ├─────────────────┼───(opt)────┤VBUS    │  │           │
+  │      │                 │            │        │  │           │
+  └──────┘                 │            │ GP10 ──┼──┤ /DENSITY  │
+                           │            │ GP11 ──┼──┤ /MOTEA    │
+                           │            │ GP12 ──┼──┤ /DRVSEL   │
+      Ulkoinen 5V PSU      │            │ GP13 ──┼──┤ /MOTOR    │
+      ┌──────────┐         │            │ GP14 ──┼──┤ /DIR      │
+      │ +5V ─────┼─────────┼──── +5V ───┤ GP15 ──┼──┤ /STEP     │
+      │          │         │            │ GP16 ──┼──┤ /WDATA    │
+      │ GND ─────┼─────────┼──── GND    │ GP17 ──┼──┤ /WGATE    │
+      └──────────┘         │            │ GP18 ──┼──┤ /TRK00    │
+                           │            │ GP19 ──┼──┤ /WPT      │
+                           │            │ GP20 ──┼──┤ /RDATA    │
+                           │            │ GP21 ──┼──┤ /SIDE1    │
+                           │            │ GP22 ──┼──┤ /DSKCHG   │
+                           │            │        │  │           │
+                           │            │ 3V3 ───┼──┤ (pull-ups)│
+                           │            │ GND ───┼──┤ GND       │
+                           │            └────────┘  │ +5V ← PSU│
+                           │                        └───────────┘
+                           │
+                           │
+  ┌────────────────────────┴────────────────────────────────────────┐
+  │                                                                │
+  │           TIEDONSIIRTOPROTOKOLLA (8-bit parallel)              │
+  │                                                                │
+  │  C64 → Pico:                    Pico → C64:                    │
+  │  ┌─────────┐  ┌──────┐          ┌──────┐  ┌─────────┐         │
+  │  │ C64     │  │ Pico │          │ Pico │  │ C64     │         │
+  │  │         │  │      │          │      │  │         │         │
+  │  │ 1. PB0-7│──│→GP0-7│          │ GP0-7│──│→PB0-7   │         │
+  │  │  = data │  │      │          │ =data│  │         │         │
+  │  │         │  │      │          │      │  │         │         │
+  │  │ 2. PA2  │──│→GP9  │          │ GP8  │──│→/FLAG2  │         │
+  │  │  = strb │  │      │          │ =strb│  │  (IRQ)  │         │
+  │  │         │  │      │          │      │  │         │         │
+  │  │ 3. wait │  │ GP8──│──────────│→/FL2 │  │ 3. read │         │
+  │  │  /FLAG2 │  │  ack │          │      │  │  PB0-7  │         │
+  │  │         │  │      │          │      │  │         │         │
+  │  └─────────┘  └──────┘          └──────┘  └─────────┘         │
+  │                                                                │
+  │  245 DIR = HIGH (A→B)           245 DIR = LOW (B→A)            │
+  │  GP26 = HIGH                    GP26 = LOW                     │
+  │                                                                │
+  └────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+  KOMPONENTTILISTA (BOM)
+================================================================================
+
+  Nro  Komponentti            Paketti       Kpl   Huomio
+  ───  ─────────────────────  ────────────  ───   ─────────────────────────
+   1   Raspberry Pi Pico      DIP-moduuli    1   RP2040
+   2   74LVC245               DIP-20/SOIC    1   Data bus level shift
+   3   BSS138                 SOT-23         2   Handshake level shift
+   4   Vastus 10kΩ            0603/0805      8   Pull-up (BSS138 + floppy)
+   5   Kond. 100nF            0603/0805      3   Bypass (Pico, 245, floppy)
+   6   Kond. 10µF             elektrol.      1   Bulk virta
+   7   24-pin edge connector  2x12 3.96mm    1   User port
+   8   34-pin IDC header      2x17 2.54mm    1   Floppy-liitäntä
+   9   4-pin Berg liitin      Berg           1   Floppy-virta
+  10   DC jack 5.5/2.1mm      panel mount    1   Ulkoinen virtalähde
+  11   LED vihreä             3mm            1   Tilaindikaattori
+  12   Vastus 330Ω            0603/0805      1   LED-vastus
+  13   Pin headerit           2.54mm         -   Pico + liitimet
+
+================================================================================

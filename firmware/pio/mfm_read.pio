@@ -1,0 +1,75 @@
+;
+; MFM read PIO program for PC floppy disk.
+;
+; Measures time between flux transitions on /RDATA pin.
+; At 500 kbps data rate, bit cell time = 2us.
+;
+; Flux transition timing:
+;   ~2us (short)  = MFM cells: 10    → data: depends on context
+;   ~3us (medium) = MFM cells: 100   → data: depends on context
+;   ~4us (long)   = MFM cells: 1000  → data: depends on context
+;
+; Actually, at 500kbps:
+;   4us between transitions = 2 bit cells (short)
+;   6us = 3 bit cells (medium)
+;   8us = 4 bit cells (long)
+;
+; The PIO counts clock cycles between falling edges on /RDATA.
+; With Pico at 125 MHz, 1 clock = 8ns, so:
+;   4us = 500 clocks
+;   6us = 750 clocks
+;   8us = 1000 clocks
+;
+; We use a clock divider to make counting more manageable.
+; With div = 125, 1 PIO cycle = 1us:
+;   4us = 4 counts → short pulse
+;   6us = 6 counts → medium pulse
+;   8us = 8 counts → long pulse
+;
+; Pin mapping:
+;   IN/WAIT pin 0 = /RDATA (GP16)
+;
+
+.program mfm_read
+
+; Count time between flux transitions (falling edges on /RDATA)
+; Push the count to the FIFO for software MFM decoding
+
+.wrap_target
+    mov x, null             ; Clear counter
+    wait 1 pin 0            ; Wait for /RDATA HIGH (between transitions)
+    wait 0 pin 0            ; Wait for /RDATA LOW (transition!)
+
+count_loop:
+    jmp pin done            ; If /RDATA went high again, we missed - restart
+    jmp x-- count_loop      ; Decrement counter, loop
+
+done:
+    mov isr, x              ; Move counter value to ISR
+    push                    ; Push to FIFO
+.wrap
+
+% c-sdk {
+static inline void mfm_read_program_init(PIO pio, uint sm, uint offset,
+                                           uint rdata_pin) {
+    pio_sm_config c = mfm_read_program_get_default_config(offset);
+
+    // IN pin = /RDATA
+    sm_config_set_in_pins(&c, rdata_pin);
+
+    // JMP pin = /RDATA (for the 'jmp pin' instruction)
+    sm_config_set_jmp_pin(&c, rdata_pin);
+
+    // Wait pin base = /RDATA
+    // (wait instructions use the in_base for pin numbering)
+
+    // Configure pin as input
+    pio_gpio_init(pio, rdata_pin);
+    pio_sm_set_consecutive_pindirs(pio, sm, rdata_pin, 1, false);
+
+    // Clock divider: 125 MHz / 125 = 1 MHz → 1us per cycle
+    sm_config_set_clkdiv(&c, 125.0f);
+
+    pio_sm_init(pio, sm, offset, &c);
+}
+%}

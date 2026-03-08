@@ -1,0 +1,49 @@
+;
+; IEC bus bit-level protocol handler using PIO.
+;
+; While the main IEC protocol is handled in software (it's slow enough),
+; PIO can be used for precise timing of bus signal edges.
+;
+; This PIO program monitors the CLK line and samples DATA on each
+; clock edge, assembling bytes LSB-first.
+;
+; Pin mapping:
+;   IN pin 0  = DATA (GP4)
+;   SET pin 0 = CLK  (GP3)
+;   JMP pin   = ATN  (GP2)
+;
+
+.program iec_receive
+.side_set 1 opt
+
+; Wait for CLK to go LOW (asserted by talker)
+wait_clk_low:
+    wait 0 pin 1           ; Wait for CLK = LOW
+    in pins, 1             ; Sample DATA bit into ISR
+    wait 1 pin 1           ; Wait for CLK = HIGH
+    jmp wait_clk_low       ; Loop for next bit
+
+; Autopush after 8 bits will push the byte to the FIFO
+
+% c-sdk {
+static inline void iec_receive_program_init(PIO pio, uint sm, uint offset,
+                                              uint data_pin, uint clk_pin) {
+    pio_sm_config c = iec_receive_program_get_default_config(offset);
+
+    // IN pin = DATA
+    sm_config_set_in_pins(&c, data_pin);
+
+    // Also map CLK as pin 1 for wait instruction
+    // (DATA = pin 0, CLK = pin 1 relative to in_base)
+
+    // Shift ISR to the right, autopush after 8 bits
+    sm_config_set_in_shift(&c, true, true, 8);
+
+    // Configure pins
+    pio_gpio_init(pio, data_pin);
+    pio_gpio_init(pio, clk_pin);
+    pio_sm_set_consecutive_pindirs(pio, sm, data_pin, 2, false);  // Both inputs
+
+    pio_sm_init(pio, sm, offset, &c);
+}
+%}
