@@ -14,6 +14,15 @@ Vaihtoehto D:n parannettu versio. Microchipin 23LC1024 SPI SRAM (128 KB) ratkais
 | [piirikaavio.md](piirikaavio.md) | 23LC1024 + 74HC595 SPI-kytkentä, kokonaispiirikaavio, bypass-kondensaattorit |
 | [diagnostiikkapadit.md](diagnostiikkapadit.md) | 14 testipistettä: signaalit, odotetut tasot, mittausohje, vianetsintä |
 
+## PCB
+
+| Variantti | Mitat | Kerrokset |
+|-----------|-------|-----------|
+| 2-layer | 140.0 × 120.0 mm | F.Cu + B.Cu |
+| 4-layer | 70.0 × 60.0 mm | F.Cu / GND / +5V / B.Cu |
+
+![64korppu-E 4-layer PCB](../../hardware/E-IEC-Nano-SRAM/4-layer/64korppu-E-4layer-3d.png)
+
 ## Piirikaavio
 
 ![Vaihtoehto E: Nano + SRAM](img/piirikaavio.png)
