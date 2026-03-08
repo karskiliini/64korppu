@@ -93,16 +93,14 @@ print('OK: routes imported, zones filled')
 ok "Reitit ja zonet OK"
 
 # --- 6. DRC ---
-info "Ajetaan DRC..."
-DRC_OUT=$(kicad-cli pcb drc --severity-all "$PCB" 2>&1)
-echo "$DRC_OUT"
-VIOLATIONS=$(echo "$DRC_OUT" | sed -n 's/.*Found \([0-9]*\) violations.*/\1/p')
-VIOLATIONS=${VIOLATIONS:-0}
-UNCONNECTED=$(echo "$DRC_OUT" | sed -n 's/.*Found \([0-9]*\) unconnected.*/\1/p')
-UNCONNECTED=${UNCONNECTED:-0}
-if [ "$UNCONNECTED" -gt 5 ]; then
-    warn "Paljon kytkemättömiä: $UNCONNECTED (>5 — tarkista!)"
+info "Ajetaan DRC-analyysi..."
+MAX_UNCONNECTED="${MAX_UNCONNECTED:-0}"
+"$SCRIPT_DIR/pcb-drc-check.py" "$PCB" --max-unconnected "$MAX_UNCONNECTED"
+DRC_EXIT=$?
+if [ "$DRC_EXIT" -ne 0 ]; then
+    fail "DRC hylätty — kriittisiä virheitä löytyi"
 fi
+ok "DRC hyväksytty"
 
 # --- 7. Gerber + drill ---
 info "Exportoidaan Gerberit..."
@@ -132,7 +130,6 @@ echo -e "${GREEN}========================================${NC}"
 echo "  PCB:     $PCB"
 echo "  Gerbers: $GERBER_ZIP"
 echo "  GenCAD:  $CAD"
-echo "  DRC:     $VIOLATIONS violations, $UNCONNECTED unconnected"
 echo ""
 echo "Lataa $GERBER_ZIP palveluun:"
 echo "  https://jlcpcb.com"
