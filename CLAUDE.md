@@ -23,6 +23,7 @@ C64 + PC 1.44MB 3.5" HD floppy -yhdistäjä. Käyttäjä kommunikoi suomeksi. "p
    - Sulut tasapainossa
    - Kaikki padit levyn sisällä
    - Ei pad-päällekkäisyyksiä
+   - **Komponenttien fyysiset rungot eivät törmää** (barrel jack, DIP, Nano, IDC jne.)
 3. Korjaa kaikki validointivirheet ennen etenemistä
 
 ### Vaihe 2: Pipeline
