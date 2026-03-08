@@ -22,3 +22,8 @@ test/test_nano_fat12
 test/test_nano_fastload
 *.dSYM/
 .claude/
+.DS_Store
+*.lck
+fp-info-cache
+*-drc.rpt
+freerouting.jar

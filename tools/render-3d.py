@@ -12,45 +12,51 @@ import numpy as np
 BOARD_X, BOARD_Y = 100, 100
 BOARD_W, BOARD_H = 70, 60
 
-# Component positions and sizes: (ref, x, y, w, h, label, color, height_mm)
+# Component bounding boxes from COMPONENT_BODIES (pcb-validate.py)
+# Format: (ref, x1, y1, x2, y2, label, color, height_mm)
+# x1,y1 = top-left corner, x2,y2 = bottom-right corner
 COMPONENTS = [
-    # Mounting holes
-    ('H1', 103, 103, 6, 6, '', '#888888', 0),
-    ('H2', 167, 103, 6, 6, '', '#888888', 0),
-    ('H3', 103, 157, 6, 6, '', '#888888', 0),
-    ('H4', 167, 157, 6, 6, '', '#888888', 0),
-    # Power
-    ('J3', 111, 105, 14, 8, 'DC 5V', '#2a2a2a', 11),
-    ('C4', 125, 104, 5, 5, '10µF', '#CD853F', 8),
-    # LED + resistor
-    ('D1', 132, 104, 4, 4, 'LED', '#00CC00', 5),
-    ('R8', 137, 104, 10, 3, '330Ω', '#DEB887', 2.5),
-    # IEC resistors (left column)
-    ('R1', 108, 116, 10, 3, '1kΩ', '#DEB887', 2.5),
-    ('R2', 108, 120, 10, 3, '1kΩ', '#DEB887', 2.5),
-    ('R3', 108, 124, 10, 3, '1kΩ', '#DEB887', 2.5),
-    ('R4', 108, 128, 10, 3, '1kΩ', '#DEB887', 2.5),
-    ('R5', 108, 132, 10, 3, '4.7kΩ', '#DEB887', 2.5),
-    ('R6', 108, 136, 10, 3, '4.7kΩ', '#DEB887', 2.5),
-    ('R7', 108, 140, 10, 3, '4.7kΩ', '#DEB887', 2.5),
-    # DIN-6 IEC connector
-    ('J1', 114, 151, 16, 16, 'IEC\nDIN-6', '#333333', 15),
-    # Arduino Nano (center)
-    ('U1', 135, 111, 7.6, 36.5, 'Arduino\nNano', '#0066CC', 10),
-    # Floppy pull-ups
-    ('R9',  148, 108, 10, 3, '10kΩ', '#DEB887', 2.5),
-    ('R10', 148, 113, 10, 3, '10kΩ', '#DEB887', 2.5),
-    ('R11', 148, 118, 10, 3, '10kΩ', '#DEB887', 2.5),
-    ('R12', 148, 123, 10, 3, '10kΩ', '#DEB887', 2.5),
-    # Floppy IDC connector
-    ('J2', 165, 110, 9, 42, 'Floppy\nIDC\n2x17', '#444444', 10),
-    # ICs
-    ('U2', 125, 150, 9, 9, 'SRAM\n23LC1024', '#333333', 5),
-    ('U3', 148, 132, 9, 20, '74HC595', '#333333', 5),
-    # Bypass caps
-    ('C1', 136, 151, 5, 5, '100nF', '#CD853F', 3),
-    ('C2', 136, 157, 5, 5, '100nF', '#CD853F', 3),
-    ('C3', 148, 156, 5, 5, '100nF', '#CD853F', 3),
+    # Mounting holes (special: drawn as circles)
+    ('H1', 101, 101, 105, 105, '', '#888888', 0),
+    ('H2', 165, 101, 169, 105, '', '#888888', 0),
+    ('H3', 101, 155, 105, 159, '', '#888888', 0),
+    ('H4', 165, 155, 169, 159, '', '#888888', 0),
+    # Power: J3 barrel jack at (111,105), body (-5,9,-4.5,8)
+    ('J3', 106, 100.5, 120, 113, 'DC 5V', '#2a2a2a', 11),
+    # C4 electrolytic at (125,104), body (-1,4,-2.5,2.5)
+    ('C4', 124, 101.5, 129, 106.5, '10µF', '#CD853F', 8),
+    # LED at (132,104), body (-2,2,-2,2)
+    ('D1', 130, 102, 134, 106, 'LED', '#00CC00', 5),
+    # R8 axial at (137,104), body (-1.5,11.5,-1.5,1.5)
+    ('R8', 135.5, 102.5, 148.5, 105.5, '330Ω', '#DEB887', 2.5),
+    # IEC series resistors R1-R4 at x=108, body (-1.5,11.5,-1.5,1.5)
+    ('R1', 106.5, 114.5, 119.5, 117.5, '1kΩ', '#DEB887', 2.5),
+    ('R2', 106.5, 118.5, 119.5, 121.5, '1kΩ', '#DEB887', 2.5),
+    ('R3', 106.5, 122.5, 119.5, 125.5, '1kΩ', '#DEB887', 2.5),
+    ('R4', 106.5, 126.5, 119.5, 129.5, '1kΩ', '#DEB887', 2.5),
+    # IEC pull-up resistors R5-R7
+    ('R5', 106.5, 130.5, 119.5, 133.5, '4.7kΩ', '#DEB887', 2.5),
+    ('R6', 106.5, 134.5, 119.5, 137.5, '4.7kΩ', '#DEB887', 2.5),
+    ('R7', 106.5, 138.5, 119.5, 141.5, '4.7kΩ', '#DEB887', 2.5),
+    # DIN-6 IEC connector at (114,151), body (-8,8,-8,8)
+    ('J1', 106, 143, 122, 159, 'IEC\nDIN-6', '#333333', 15),
+    # Arduino Nano at (135,111), PinHeader body (-2,5,-1.5,36.5)
+    ('U1', 133, 109.5, 140, 147.5, 'Arduino\nNano', '#0066CC', 10),
+    # Floppy pull-up resistors R9-R12 at x=148
+    ('R9',  146.5, 106.5, 159.5, 109.5, '10kΩ', '#DEB887', 2.5),
+    ('R10', 146.5, 111.5, 159.5, 114.5, '10kΩ', '#DEB887', 2.5),
+    ('R11', 146.5, 116.5, 159.5, 119.5, '10kΩ', '#DEB887', 2.5),
+    ('R12', 146.5, 121.5, 159.5, 124.5, '10kΩ', '#DEB887', 2.5),
+    # Floppy IDC connector at (165,110), body (-4.5,4.5,-2,42)
+    ('J2', 160.5, 108, 169.5, 152, 'Floppy\nIDC\n2x17', '#444444', 10),
+    # SRAM DIP-8 at (125,150), body (-1.5,9,-1.5,9)
+    ('U2', 123.5, 148.5, 134, 159, 'SRAM\n23LC1024', '#333333', 5),
+    # 74HC595 DIP-16 at (148,132), body (-1.5,9,-1.5,20)
+    ('U3', 146.5, 130.5, 157, 152, '74HC595', '#333333', 5),
+    # Bypass caps: C_Disc body (-1,6,-2.5,2.5)
+    ('C1', 135, 148.5, 142, 153.5, '100nF', '#CD853F', 3),
+    ('C2', 135, 154.5, 142, 159.5, '100nF', '#CD853F', 3),
+    ('C3', 147, 153.5, 154, 158.5, '100nF', '#CD853F', 3),
 ]
 
 # Test points (on back side, shown as small circles)
@@ -86,20 +92,25 @@ def draw_top_view(ax):
         ax.plot([x, x], [101, 159], color='#2a7a2a', linewidth=0.3, alpha=0.5)
 
     # Components
-    for ref, x, y, w, h, label, color, height in COMPONENTS:
+    for ref, x1, y1, x2, y2, label, color, height in COMPONENTS:
+        w = x2 - x1
+        h = y2 - y1
+        cx = (x1 + x2) / 2
+        cy = (y1 + y2) / 2
+
         if ref.startswith('H'):
             # Mounting holes
-            circle = plt.Circle((x, y), 3, facecolor='#666666',
+            circle = plt.Circle((cx, cy), 3, facecolor='#666666',
                                 edgecolor='#444444', linewidth=1.5)
             ax.add_patch(circle)
-            inner = plt.Circle((x, y), 1.6, facecolor='#1a5c1a',
+            inner = plt.Circle((cx, cy), 1.6, facecolor='#1a5c1a',
                                edgecolor='#444444', linewidth=0.5)
             ax.add_patch(inner)
             continue
 
         # Component body
         rect = FancyBboxPatch(
-            (x - w/2, y - h/2 if h < 10 else y), w, h,
+            (x1, y1), w, h,
             boxstyle="round,pad=0.3",
             facecolor=color, edgecolor='#111111', linewidth=0.8,
             alpha=0.9)
@@ -107,21 +118,16 @@ def draw_top_view(ax):
 
         # Label
         if label:
-            cy = y if h < 10 else y + h/2
             fontsize = 5 if len(label) > 6 else 6
-            ax.text(x + w/2 if ref.startswith('R') else x + w/2 - w/2,
-                    cy, label,
+            ax.text(cx, cy, label,
                     ha='center', va='center', fontsize=fontsize,
                     color='white' if color in ('#333333', '#444444', '#2a2a2a', '#0066CC') else '#333333',
                     fontweight='bold')
 
         # Reference designator
-        if not ref.startswith('H'):
-            ref_y = y - h/2 - 1.5 if h < 10 else y - 1.5
-            ax.text(x + w/2 if ref.startswith('R') else x,
-                    ref_y, ref,
-                    ha='center', va='top', fontsize=4,
-                    color='#FFD700', fontweight='bold')
+        ax.text(cx, y1 - 1.5, ref,
+                ha='center', va='top', fontsize=4,
+                color='#FFD700', fontweight='bold')
 
     # Test point indicators (small golden circles on left edge)
     for ref, x, y, sig in TEST_POINTS:
@@ -173,25 +179,15 @@ def draw_isometric(ax):
                              edgecolor='#0d3d0d', linewidth=2)
     ax.add_patch(board_poly)
 
-    # Draw components as 3D blocks
-    for ref, x, y, w, h, label, color, height in COMPONENTS:
+    # Draw components as 3D blocks (back-to-front for correct overlap)
+    for ref, x1, y1, x2, y2, label, color, height in sorted(COMPONENTS, key=lambda c: -(c[2] + c[4])/2):
         if ref.startswith('H') or height == 0:
             continue
 
-        # Component corners (top of component)
-        if h < 10:
-            cx, cy = x, y
-            hw, hh = w/2, h/2
-        else:
-            cx, cy = x + w/2, y + h/2
-            hw, hh = w/2, h/2
+        cx = (x1 + x2) / 2
+        cy = (y1 + y2) / 2
 
-        corners = [
-            (cx - hw, cy - hh),
-            (cx + hw, cy - hh),
-            (cx + hw, cy + hh),
-            (cx - hw, cy + hh),
-        ]
+        corners = [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
 
         z = height
         top = [iso(px, py, z) for px, py in corners]
