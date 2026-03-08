@@ -19,5 +19,6 @@ test/test_d64
 test/test_cbmfs
 test/test_format
 test/test_nano_fat12
+test/test_nano_fastload
 *.dSYM/
 .claude/
