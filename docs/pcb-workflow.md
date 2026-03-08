@@ -5,99 +5,110 @@ Koko PCB-suunnitteluprosessi komentoriviltä ilman GUI:ta.
 ## Vaatimukset
 
 - KiCad 9+ (`brew install --cask kicad`)
-- Freerouting (`java -jar freerouting.jar`) — https://github.com/freerouting/freerouting/releases
+- Freerouting (`tools/freerouting.jar`) — https://github.com/freerouting/freerouting/releases
+- OpenJDK (`brew install openjdk`)
 - KiCadin Python: `/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3`
 
-## Vaiheet
+## Pikapolku: kaikki yhdellä komennolla
 
-### 1. Generoi KiCad-projektitiedostot
+Kun `.kicad_pcb` on generoitu, **yksi komento** hoitaa kaiken:
 
-Claude Code generoi:
-- `.kicad_pro` — projektiasetuks (JSON)
+```bash
+./tools/pcb-pipeline.sh hardware/E-IEC-Nano-SRAM/64korppu-E
+```
+
+Pipeline tekee: validointi → DSN export → Freerouting → SES import → zone fill → DRC → Gerberit → GenCAD → zip.
+
+## Vaiheet yksityiskohtaisesti
+
+### 1. Claude Code generoi KiCad-projektitiedostot
+
+Generoitavat tiedostot:
+- `.kicad_pro` — projektiasetukset (JSON)
 - `.kicad_sch` — piirikaavio (S-expression)
 - `.kicad_pcb` — PCB-layout ilman reititystä (S-expression)
 - Custom footprintit `.pretty/`-kansioon
 - `fp-lib-table` — kirjastoviittaus
 
-**Huom:** PCB-tiedostossa ei saa olla `;;`-kommentteja — KiCad hylkää ne.
-
-### 2. Export DSN (Specctra Design)
+### 2. Validoi ja reititä
 
 ```bash
-/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 -c "
-import pcbnew
-board = pcbnew.LoadBoard('hardware/E-IEC-Nano-SRAM/64korppu-E.kicad_pcb')
-pcbnew.ExportSpecctraDSN(board, 'hardware/E-IEC-Nano-SRAM/64korppu-E.dsn')
-print('DSN exported')
-"
+./tools/pcb-pipeline.sh hardware/<variant>/<name>
 ```
 
-### 3. Automaattireititys Freeroutingilla
+### 3. Kopioi tuotokset bin/-kansioon
 
 ```bash
-java -jar freerouting.jar -de hardware/E-IEC-Nano-SRAM/64korppu-E.dsn \
-                          -do hardware/E-IEC-Nano-SRAM/64korppu-E.ses
+cp hardware/<variant>/<name>-gerbers.zip bin/<variant>/
 ```
 
-### 4. Import SES (reititetyt tracet takaisin KiCadiin)
+### 4. Tilaa
 
-```bash
-/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 -c "
-import pcbnew
-board = pcbnew.LoadBoard('hardware/E-IEC-Nano-SRAM/64korppu-E.kicad_pcb')
-pcbnew.ImportSpecctraSES(board, 'hardware/E-IEC-Nano-SRAM/64korppu-E.ses')
-board.Save('hardware/E-IEC-Nano-SRAM/64korppu-E.kicad_pcb')
-print('SES imported, PCB saved with tracks')
-"
-```
-
-### 5. Gerber-export tilausta varten
-
-```bash
-mkdir -p hardware/E-IEC-Nano-SRAM/gerbers
-
-# Kuparikerrokset, silkscreen, mask, reunat
-kicad-cli pcb export gerbers \
-  --layers F.Cu,B.Cu,F.SilkS,B.SilkS,F.Mask,B.Mask,Edge.Cuts \
-  -o hardware/E-IEC-Nano-SRAM/gerbers/ \
-  hardware/E-IEC-Nano-SRAM/64korppu-E.kicad_pcb
-
-# Porausreikätiedostot
-kicad-cli pcb export drill \
-  -o hardware/E-IEC-Nano-SRAM/gerbers/ \
-  hardware/E-IEC-Nano-SRAM/64korppu-E.kicad_pcb
-
-# Pakkaa zip JLCPCB:lle / PCBWaylle
-cd hardware/E-IEC-Nano-SRAM/gerbers && zip ../64korppu-E-gerbers.zip * && cd -
-```
-
-### 6. Tilaus
-
-Lataa `64korppu-E-gerbers.zip` palveluun:
+Lataa `<name>-gerbers.zip` palveluun:
 - https://jlcpcb.com — halvin, 5 levyä ~$2 + toimitus
 - https://www.pcbway.com — hyvä laatu
 
-## DRC-tarkistus (valinnainen)
+## Kriittiset säännöt PCB-generoinnissa
+
+**Nämä tulee tarkistaa AINA ennen reititystä.** `pcb-validate.py` tarkistaa automaattisesti.
+
+### 1. Ei `;;`-kommentteja
+KiCad 9 hylkää S-expression-tiedostot joissa on `;;`-kommentteja.
+
+### 2. Komponenttien minimietäisyydet
+- **Eri komponenttien padien reunojen** välissä vähintään **0.3 mm**
+- Erityisvaara: axial-vastukset (P10.16mm) ulottuvat 10.16mm origosta
+- DIP-paketit: DIP-16 ulottuu 17.78mm pystysuunnassa, 7.62mm vaakasuunnassa
+- 2x17 IDC header: ulottuu 40.64mm pystysuunnassa
+
+### 3. Kaikki padit piirilevyn sisällä
+- Jokaisen padin **absoluuttinen** sijainti (footprint origin + pad offset + rotaatio) tulee olla levyn rajojen sisällä
+- Vähintään 0.5mm marginaali reunaan
+
+### 4. Komponenttien sijoittelusäännöt
+- **Älä aseta IC:itä suoraan toistensa päälle tai viereen** — jätä vähintään 5mm IC-pakettien väliin
+- Arduino Nano (2x15, P2.54mm) ulottuu 35.56mm pystysuunnassa
+- Sijoita 74HC595 ja 23LC1024 **eri puolille** Nanoa, ei suoraan alle
+
+### 5. Piirilevyn koko
+- Prototyypille 100-120mm per sivu on hyvä
+- Mounting holet M3 (3.2mm drill, 6mm pad) 3mm sisäänvedolla kulmista
+- GND copper zone B.Cu-kerrokselle
+
+## Työkalut
+
+| Tiedosto | Kuvaus |
+|----------|--------|
+| `tools/pcb-pipeline.sh` | Koko pipeline yhdellä komennolla |
+| `tools/pcb-validate.py` | Validoi PCB ennen reititystä |
+| `tools/freerouting.jar` | Freerouting autorouter |
+
+## Tuotetut tiedostot
+
+```
+hardware/<variant>/
+├── <name>.kicad_pro          Projektiasetukset
+├── <name>.kicad_sch          Piirikaavio
+├── <name>.kicad_pcb          PCB-layout (+ tracet reitytyksen jälkeen)
+├── <name>.dsn                Specctra DSN (väliaikainen)
+├── <name>.ses                Specctra Session (väliaikainen)
+├── <name>.cad                GenCAD (Eagle-yhteensopiva)
+├── <name>-gerbers.zip        Valmis tilattavaksi
+├── <name>.pretty/            Custom footprintit
+├── fp-lib-table              Kirjastoviittaus
+└── gerbers/                  Gerber + drill -tiedostot
+
+bin/<variant>/
+├── <name>-gerbers.zip        Gerberit (kopio)
+└── <variant>.zip             Firmware-binääri
+```
+
+## DRC-tarkistus erikseen
 
 ```bash
-kicad-cli pcb drc \
-  --severity-all \
-  --exit-code-violations \
-  hardware/E-IEC-Nano-SRAM/64korppu-E.kicad_pcb
+kicad-cli pcb drc --severity-all hardware/<variant>/<name>.kicad_pcb
 ```
 
-## Tiedostot
+## GenCAD → Eagle
 
-```
-hardware/E-IEC-Nano-SRAM/
-├── 64korppu-E.kicad_pro          Projektiasetuks
-├── 64korppu-E.kicad_sch          Piirikaavio
-├── 64korppu-E.kicad_pcb          PCB-layout (+ tracet importin jälkeen)
-├── 64korppu-E.dsn                Specctra DSN (väliaikainen)
-├── 64korppu-E.ses                Specctra Session (väliaikainen)
-├── 64korppu-E-gerbers.zip        Valmis tilattavaksi
-├── 64korppu-E.pretty/            Custom footprintit
-│   └── DIN-6_IEC_Vertical.kicad_mod
-├── fp-lib-table                  Kirjastoviittaus
-└── gerbers/                      Gerber + drill -tiedostot
-```
+Eagle: **File → Import → GenCAD** ja valitse `.cad`-tiedosto.
