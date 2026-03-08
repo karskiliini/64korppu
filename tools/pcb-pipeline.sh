@@ -108,7 +108,7 @@ fi
 info "Exportoidaan Gerberit..."
 mkdir -p "$GERBER_DIR"
 kicad-cli pcb export gerbers \
-    --layers F.Cu,B.Cu,F.SilkS,B.SilkS,F.Mask,B.Mask,Edge.Cuts \
+    --layers F.Cu,In1.Cu,In2.Cu,B.Cu,F.SilkS,B.SilkS,F.Mask,B.Mask,Edge.Cuts \
     -o "$GERBER_DIR/" "$PCB"
 kicad-cli pcb export drill -o "$GERBER_DIR/" "$PCB"
 ok "Gerberit: $GERBER_DIR/"
