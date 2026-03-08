@@ -13,5 +13,11 @@ CMakeFiles/
 cmake_install.cmake
 Makefile
 !test/Makefile
+!firmware/*/Makefile
 compile_commands.json
+test/test_d64
+test/test_cbmfs
+test/test_format
+test/test_nano_fat12
+*.dSYM/
 .claude/
