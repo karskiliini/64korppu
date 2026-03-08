@@ -12,6 +12,7 @@ Pico emuloi CBM-levyasemaa (device #8) IEC-väylällä ja ohjaa PC-korppuasemaa 
 |---|---|
 | [kuvaus.md](kuvaus.md) | Arkkitehtuuri, komponenttilista, GPIO-kartta, firmware-rakenne, plussat/miinukset |
 | [piirikaavio.md](piirikaavio.md) | Yksityiskohtainen piirikaavio: BSS138 level shifter, floppy-kytkentä, Pico pinout |
+| [d64-tuki.md](d64-tuki.md) | D64 disk image -tuki: formaatti, käyttöohjeet, rajoitukset |
 
 ## Piirikaavio
 
@@ -23,6 +24,7 @@ Pico emuloi CBM-levyasemaa (device #8) IEC-väylällä ja ohjaa PC-korppuasemaa 
 - **Dual-core**: IEC-protokolla ja floppy-ohjaus rinnakkain
 - **PIO**: tarkka ajoitus MFM-koodaukselle ja IEC-signaloinnille
 - **264 KB RAM**: koko raita ja FAT-taulu mahtuvat muistiin
+- **D64 disk image -tuki**: kopioi .D64-tiedosto levylle, mounttaa C64:llä `CD:`-komennolla
 
 ## Hinta: ~12€
 

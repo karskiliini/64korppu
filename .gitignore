@@ -12,5 +12,6 @@ CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 Makefile
+!test/Makefile
 compile_commands.json
 .claude/

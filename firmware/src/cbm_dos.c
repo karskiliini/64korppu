@@ -1,6 +1,7 @@
 #include "cbm_dos.h"
 #include "iec_protocol.h"
 #include "fat12.h"
+#include "d64.h"
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -23,6 +24,10 @@
  * Each "block" = 256 bytes (to match CBM convention)
  */
 
+/* D64 mode state */
+static bool d64_mode = false;
+static d64_file_handle_t d64_handle;
+
 /* File handles for open channels */
 static fat12_file_t channel_files[IEC_NUM_CHANNELS];
 
@@ -34,6 +39,8 @@ static bool dir_active = false;
 
 void cbm_dos_init(void) {
     memset(channel_files, 0, sizeof(channel_files));
+    memset(&d64_handle, 0, sizeof(d64_handle));
+    d64_mode = false;
     dir_active = false;
 
     /* Set initial status: "73, 64KORPPU V1.0,00,00" */
@@ -57,7 +64,169 @@ int cbm_dos_format_error(uint8_t code, const char *msg,
  *   - Variable: BASIC tokens / text
  *   - 1 byte: 0x00 line terminator
  */
+/*
+ * Helper: write BASIC directory header line.
+ */
+static uint16_t dir_write_header(uint8_t *buf, uint16_t pos,
+                                  const char *label, const char *id) {
+    uint16_t line_start = pos;
+    buf[pos++] = 0x00;  /* Next line pointer (placeholder) */
+    buf[pos++] = 0x00;
+
+    /* Line number = 0 */
+    buf[pos++] = 0x00;
+    buf[pos++] = 0x00;
+
+    buf[pos++] = 0x12;  /* RVS ON */
+    buf[pos++] = '"';
+
+    for (int i = 0; i < 16 && label[i]; i++) {
+        buf[pos++] = label[i];
+    }
+    buf[pos++] = '"';
+    buf[pos++] = ' ';
+
+    for (const char *p = id; *p; p++) {
+        buf[pos++] = *p;
+    }
+
+    buf[pos++] = 0x00;  /* End of line */
+
+    /* Fix next line pointer */
+    buf[line_start] = (pos + 0x0401) & 0xFF;
+    buf[line_start + 1] = ((pos + 0x0401) >> 8) & 0xFF;
+
+    return pos;
+}
+
+/*
+ * Helper: write a file entry line in BASIC directory format.
+ */
+static uint16_t dir_write_entry(uint8_t *buf, uint16_t pos,
+                                 uint16_t blocks, const char *name,
+                                 int name_len, const char *type) {
+    uint16_t line_start = pos;
+    buf[pos++] = 0x00;  /* Next line pointer (placeholder) */
+    buf[pos++] = 0x00;
+
+    buf[pos++] = blocks & 0xFF;
+    buf[pos++] = (blocks >> 8) & 0xFF;
+
+    /* Spacing for alignment */
+    if (blocks < 10) buf[pos++] = ' ';
+    if (blocks < 100) buf[pos++] = ' ';
+    if (blocks < 1000) buf[pos++] = ' ';
+
+    buf[pos++] = '"';
+    for (int i = 0; i < name_len; i++) {
+        buf[pos++] = name[i];
+    }
+    buf[pos++] = '"';
+
+    /* Pad to column for type */
+    for (int i = name_len; i < 16; i++) {
+        buf[pos++] = ' ';
+    }
+
+    for (const char *p = type; *p; p++) {
+        buf[pos++] = *p;
+    }
+
+    buf[pos++] = 0x00;
+
+    /* Fix next line pointer */
+    buf[line_start] = (pos + 0x0401) & 0xFF;
+    buf[line_start + 1] = ((pos + 0x0401) >> 8) & 0xFF;
+
+    return pos;
+}
+
+/*
+ * Generate D64 directory listing in BASIC format.
+ */
+static void cbm_dos_generate_d64_directory(void) {
+    uint16_t pos = 0;
+    uint8_t *buf = dir_buffer;
+
+    /* Load address: $0401 */
+    buf[pos++] = 0x01;
+    buf[pos++] = 0x04;
+
+    /* Header with D64 disk name */
+    char disk_name[17];
+    d64_get_disk_name(disk_name);
+
+    /* Pad disk name to 16 chars */
+    char padded_name[17];
+    memset(padded_name, ' ', 16);
+    padded_name[16] = '\0';
+    int nlen = strlen(disk_name);
+    if (nlen > 16) nlen = 16;
+    memcpy(padded_name, disk_name, nlen);
+
+    pos = dir_write_header(buf, pos, padded_name, "64 D64");
+
+    /* File entries from D64 */
+    d64_dir_entry_t entry;
+    int rc = d64_dir_first(&entry);
+    while (rc == 0) {
+        int fname_len = strlen(entry.filename);
+
+        const char *type_str;
+        switch (entry.file_type) {
+            case D64_FILE_PRG: type_str = "PRG"; break;
+            case D64_FILE_SEQ: type_str = "SEQ"; break;
+            case D64_FILE_USR: type_str = "USR"; break;
+            case D64_FILE_REL: type_str = "REL"; break;
+            default:           type_str = "PRG"; break;
+        }
+
+        pos = dir_write_entry(buf, pos, entry.size_blocks,
+                              entry.filename, fname_len, type_str);
+
+        if (pos > sizeof(dir_buffer) - 64) break;
+
+        rc = d64_dir_next(&entry);
+    }
+
+    /* "Blocks free" line — count free blocks from BAM */
+    uint16_t line_start = pos;
+    buf[pos++] = 0x00;
+    buf[pos++] = 0x00;
+
+    /* Read free blocks from BAM: sum track free counts, skip track 18 */
+    uint8_t bam_sector[256];
+    uint16_t free_blocks = 0;
+    if (d64_read_sector(D64_BAM_TRACK, D64_BAM_SECTOR, bam_sector)) {
+        for (uint8_t t = 1; t <= D64_NUM_TRACKS; t++) {
+            if (t == D64_DIR_TRACK) continue;
+            free_blocks += bam_sector[4 * t];
+        }
+    }
+
+    buf[pos++] = free_blocks & 0xFF;
+    buf[pos++] = (free_blocks >> 8) & 0xFF;
+
+    const char *free_msg = "BLOCKS FREE.";
+    for (const char *p = free_msg; *p; p++) {
+        buf[pos++] = *p;
+    }
+    buf[pos++] = 0x00;
+
+    buf[pos++] = 0x00;
+    buf[pos++] = 0x00;
+
+    dir_len = pos;
+    dir_pos = 0;
+    dir_active = true;
+}
+
 void cbm_dos_generate_directory(iec_channel_t *channel) {
+    if (d64_mode) {
+        cbm_dos_generate_d64_directory();
+        return;
+    }
+
     uint16_t pos = 0;
     uint8_t *buf = dir_buffer;
 
@@ -65,43 +234,8 @@ void cbm_dos_generate_directory(iec_channel_t *channel) {
     buf[pos++] = 0x01;
     buf[pos++] = 0x04;
 
-    /* Header line: 0 "DISK LABEL" ID FAT12 */
-    /* Next line pointer (placeholder, will fix later) */
-    uint16_t line_start = pos;
-    buf[pos++] = 0x00;  /* Next line pointer low (placeholder) */
-    buf[pos++] = 0x00;  /* Next line pointer high (placeholder) */
-
-    /* Line number = 0 */
-    buf[pos++] = 0x00;
-    buf[pos++] = 0x00;
-
-    /* Reverse video on */
-    buf[pos++] = 0x12;  /* RVS ON */
-
-    /* "DISK LABEL      " */
-    buf[pos++] = '"';
-
-    /* Get volume label from FAT12 or use default */
-    const char *label = "64KORPPU        ";
-    for (int i = 0; i < 16 && label[i]; i++) {
-        buf[pos++] = label[i];
-    }
-    buf[pos++] = '"';
-    buf[pos++] = ' ';
-
-    /* Disk ID */
-    buf[pos++] = '6';
-    buf[pos++] = '4';
-    buf[pos++] = ' ';
-    buf[pos++] = 'F';
-    buf[pos++] = 'A';
-    buf[pos++] = 'T';
-
-    buf[pos++] = 0x00;  /* End of line */
-
-    /* Fix next line pointer */
-    buf[line_start] = (pos + 0x0401) & 0xFF;
-    buf[line_start + 1] = ((pos + 0x0401) >> 8) & 0xFF;
+    /* Header line */
+    pos = dir_write_header(buf, pos, "64KORPPU        ", "64 FAT");
 
     /* File entries */
     uint16_t dir_index = 0;
@@ -111,71 +245,50 @@ void cbm_dos_generate_directory(iec_channel_t *channel) {
         /* Skip volume labels */
         if (entry.attr & FAT12_ATTR_VOLUME_ID) continue;
 
-        line_start = pos;
-        buf[pos++] = 0x00;  /* Next line pointer (placeholder) */
-        buf[pos++] = 0x00;
-
         /* Line number = blocks (file_size / 256, rounded up, min 1) */
         uint16_t blocks = (entry.file_size + 255) / 256;
         if (blocks == 0) blocks = 1;
-        buf[pos++] = blocks & 0xFF;
-        buf[pos++] = (blocks >> 8) & 0xFF;
 
-        /* Spacing for alignment */
-        if (blocks < 10) buf[pos++] = ' ';
-        if (blocks < 100) buf[pos++] = ' ';
-        if (blocks < 1000) buf[pos++] = ' ';
-
-        /* "FILENAME EXT" */
-        buf[pos++] = '"';
+        /* Build filename string */
+        char fname[20];
+        int fname_len = 0;
 
         /* Filename (8 chars, trim trailing spaces) */
         int name_len = 8;
         while (name_len > 0 && entry.name[name_len - 1] == ' ') name_len--;
         for (int i = 0; i < name_len; i++) {
-            buf[pos++] = entry.name[i];
+            fname[fname_len++] = entry.name[i];
         }
 
         /* Add dot and extension if not spaces */
         int ext_len = 3;
         while (ext_len > 0 && entry.ext[ext_len - 1] == ' ') ext_len--;
         if (ext_len > 0) {
-            buf[pos++] = '.';
+            fname[fname_len++] = '.';
             for (int i = 0; i < ext_len; i++) {
-                buf[pos++] = entry.ext[i];
+                fname[fname_len++] = entry.ext[i];
             }
         }
 
-        buf[pos++] = '"';
-
-        /* Pad to column for type */
-        int total_name = name_len + (ext_len > 0 ? 1 + ext_len : 0);
-        for (int i = total_name; i < 16; i++) {
-            buf[pos++] = ' ';
-        }
-
         /* File type */
+        const char *type_str;
         if (entry.attr & FAT12_ATTR_DIRECTORY) {
-            buf[pos++] = 'D'; buf[pos++] = 'I'; buf[pos++] = 'R';
+            type_str = "DIR";
         } else if (ext_len >= 3 && memcmp(entry.ext, "PRG", 3) == 0) {
-            buf[pos++] = 'P'; buf[pos++] = 'R'; buf[pos++] = 'G';
+            type_str = "PRG";
         } else if (ext_len >= 3 && memcmp(entry.ext, "SEQ", 3) == 0) {
-            buf[pos++] = 'S'; buf[pos++] = 'E'; buf[pos++] = 'Q';
+            type_str = "SEQ";
         } else {
-            buf[pos++] = 'P'; buf[pos++] = 'R'; buf[pos++] = 'G';
+            type_str = "PRG";
         }
 
-        buf[pos++] = 0x00;  /* End of line */
-
-        /* Fix next line pointer */
-        buf[line_start] = (pos + 0x0401) & 0xFF;
-        buf[line_start + 1] = ((pos + 0x0401) >> 8) & 0xFF;
+        pos = dir_write_entry(buf, pos, blocks, fname, fname_len, type_str);
 
         if (pos > sizeof(dir_buffer) - 64) break;  /* Safety margin */
     }
 
     /* "Blocks free" line */
-    line_start = pos;
+    uint16_t line_start = pos;
     buf[pos++] = 0x00;
     buf[pos++] = 0x00;
 
@@ -213,7 +326,26 @@ void cbm_dos_open(uint8_t sa, const char *filename, uint8_t len) {
             return;
         }
 
-        /* Parse filename */
+        if (d64_mode) {
+            /* D64 mode: operate on files within the mounted D64 image */
+            if (sa == IEC_SA_LOAD) {
+                int rc = d64_file_open(filename, &d64_handle);
+                if (rc != 0) {
+                    iec_set_error(CBM_ERR_FILE_NOT_FOUND, "FILE NOT FOUND", 0, 0);
+                    return;
+                }
+            } else {
+                int rc = d64_file_create(filename, &d64_handle);
+                if (rc != 0) {
+                    iec_set_error(CBM_ERR_DISK_FULL, "DISK FULL", 0, 0);
+                    return;
+                }
+            }
+            iec_set_error(CBM_ERR_OK, "OK", 0, 0);
+            return;
+        }
+
+        /* FAT12 mode */
         fat12_parse_filename(filename, name8, ext3);
 
         if (sa == IEC_SA_LOAD) {
@@ -241,7 +373,9 @@ void cbm_dos_open(uint8_t sa, const char *filename, uint8_t len) {
 }
 
 void cbm_dos_close(uint8_t sa) {
-    if (channel_files[sa].active) {
+    if (d64_mode && d64_handle.active) {
+        d64_file_close(&d64_handle);
+    } else if (channel_files[sa].active) {
         fat12_close(&channel_files[sa]);
     }
     dir_active = false;
@@ -272,7 +406,21 @@ bool cbm_dos_talk_byte(uint8_t sa, uint8_t *byte, bool *eoi) {
             return false;
         }
 
-        /* Read from file */
+        /* D64 mode: read from D64 file handle */
+        if (d64_mode && d64_handle.active) {
+            int val = d64_file_read_byte(&d64_handle);
+            if (val >= 0) {
+                *byte = (uint8_t)val;
+                if (d64_handle.eof) {
+                    *eoi = true;
+                }
+                return true;
+            }
+            *eoi = true;
+            return false;
+        }
+
+        /* FAT12 mode: read from file */
         if (channel_files[sa].active) {
             uint8_t buf;
             int rc = fat12_read(&channel_files[sa], &buf, 1);
@@ -294,6 +442,10 @@ bool cbm_dos_talk_byte(uint8_t sa, uint8_t *byte, bool *eoi) {
 }
 
 void cbm_dos_listen_byte(uint8_t sa, uint8_t byte) {
+    if (d64_mode && sa == IEC_SA_SAVE && d64_handle.active) {
+        d64_file_write_byte(&d64_handle, byte);
+        return;
+    }
     if (sa == IEC_SA_SAVE && channel_files[sa].active) {
         fat12_write(&channel_files[sa], &byte, 1);
     }
@@ -316,15 +468,59 @@ void cbm_dos_execute_command(const char *cmd, uint8_t len) {
     }
 
     switch (cmd_buf[0]) {
+        case 'C': {
+            /* CD:filename - Change directory / mount D64 */
+            if (cmd_len > 3 && cmd_buf[1] == 'D' && cmd_buf[2] == ':') {
+                const char *arg = &cmd_buf[3];
+
+                if (strcmp(arg, "..") == 0) {
+                    /* CD:.. - unmount D64 and return to FAT12 root */
+                    if (d64_mode) {
+                        d64_unmount();
+                        d64_mode = false;
+                        iec_set_error(CBM_ERR_OK, "OK", 0, 0);
+                    } else {
+                        iec_set_error(CBM_ERR_OK, "OK", 0, 0);
+                    }
+                } else {
+                    /* CD:GAME.D64 - mount a D64 image */
+                    if (d64_mode) {
+                        /* Already in D64 mode, unmount first */
+                        d64_unmount();
+                        d64_mode = false;
+                    }
+                    if (d64_mount(arg)) {
+                        d64_mode = true;
+                        iec_set_error(CBM_ERR_OK, "OK", 0, 0);
+                    } else {
+                        iec_set_error(CBM_ERR_FILE_NOT_FOUND, "FILE NOT FOUND", 0, 0);
+                    }
+                }
+            } else {
+                iec_set_error(CBM_ERR_SYNTAX_ERROR, "SYNTAX ERROR", 0, 0);
+            }
+            break;
+        }
+
         case 'S': {
             /* S:filename - Scratch (delete) */
             if (cmd_len > 2 && cmd_buf[1] == ':') {
-                fat12_parse_filename(&cmd_buf[2], name8, ext3);
-                int rc = fat12_delete(name8, ext3);
-                if (rc == FAT12_OK) {
-                    iec_set_error(CBM_ERR_FILES_SCRATCHED, "FILES SCRATCHED", 1, 0);
+                if (d64_mode) {
+                    /* Delete file within mounted D64 */
+                    int rc = d64_file_delete(&cmd_buf[2]);
+                    if (rc == 0) {
+                        iec_set_error(CBM_ERR_FILES_SCRATCHED, "FILES SCRATCHED", 1, 0);
+                    } else {
+                        iec_set_error(CBM_ERR_FILE_NOT_FOUND, "FILE NOT FOUND", 0, 0);
+                    }
                 } else {
-                    iec_set_error(CBM_ERR_FILE_NOT_FOUND, "FILE NOT FOUND", 0, 0);
+                    fat12_parse_filename(&cmd_buf[2], name8, ext3);
+                    int rc = fat12_delete(name8, ext3);
+                    if (rc == FAT12_OK) {
+                        iec_set_error(CBM_ERR_FILES_SCRATCHED, "FILES SCRATCHED", 1, 0);
+                    } else {
+                        iec_set_error(CBM_ERR_FILE_NOT_FOUND, "FILE NOT FOUND", 0, 0);
+                    }
                 }
             } else {
                 iec_set_error(CBM_ERR_SYNTAX_ERROR, "SYNTAX ERROR", 0, 0);

@@ -16,6 +16,7 @@ add_executable(64korppu
     src/fat12.c
     src/iec_protocol.c
     src/cbm_dos.c
+    src/d64.c
 )
 
 pico_generate_pio_header(64korppu ${CMAKE_CURRENT_LIST_DIR}/pio/iec_bus.pio)

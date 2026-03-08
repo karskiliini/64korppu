@@ -1,0 +1,10 @@
+# Compiled test binaries
+test_d64
+test_d64.dSYM/
+
+# Generated test data
+TEST.D64
+
+# IEC bridge binary
+vice/iec_bridge
+vice/iec_bridge.dSYM/
