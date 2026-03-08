@@ -1,0 +1,23 @@
+64korppu Nano Firmware - Flashing Instructions (Windows)
+=========================================================
+
+1. Install avrdude
+   - Download WinAVR from https://winavr.sourceforge.net/ (includes avrdude)
+   - Or install via Chocolatey: choco install avrdude
+
+2. Connect your Arduino Nano via USB
+
+3. Find your COM port
+   - Open Device Manager > Ports (COM & LPT)
+   - Look for "USB-SERIAL" or "CH340" — note the COM number (e.g. COM3)
+
+4. Flash the firmware
+   Open Command Prompt and run:
+
+   avrdude -c arduino -p atmega328p -P COM3 -b 115200 -U flash:w:64korppu_nano.hex:i
+
+   Replace COM3 with your actual COM port.
+
+5. If flashing fails, try the old bootloader baud rate:
+
+   avrdude -c arduino -p atmega328p -P COM3 -b 57600 -U flash:w:64korppu_nano.hex:i
