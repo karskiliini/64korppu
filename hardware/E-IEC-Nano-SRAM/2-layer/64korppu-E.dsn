@@ -41,7 +41,7 @@
       (place C4 180000.000000 -108000.000000 front 0.000000 (PN 100uF))
     )
     (component "64korppu-E:DIN-6_IEC_Vertical"
-      (place J1 108000.000000 -148000.000000 front 0.000000 (PN "DIN-6_IEC"))
+      (place J1 118000.000000 -158000.000000 front 0.000000 (PN "DIN-6_IEC"))
     )
     (component Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal
       (place R1 122000.000000 -122000.000000 front 0.000000 (PN 1k))

@@ -74,8 +74,18 @@ ok "DSN: $DSN"
 
 # --- 3. Freerouting ---
 info "Ajetaan Freerouting..."
-$JAVA -jar "$FREEROUTING" -de "$DSN" -do "$SES" -mt 1 2>&1 | \
-    grep -E "(Auto-routing was completed|unrouted|Saving)" || true
+FREEROUTE_TIMEOUT="${FREEROUTE_TIMEOUT:-60}"
+$JAVA -jar "$FREEROUTING" -de "$DSN" -do "$SES" -mt 1 &
+FR_PID=$!
+for _i in $(seq 1 "$FREEROUTE_TIMEOUT"); do
+    kill -0 $FR_PID 2>/dev/null || break
+    sleep 1
+done
+if kill -0 $FR_PID 2>/dev/null; then
+    warn "Freerouting timeout (${FREEROUTE_TIMEOUT}s) — pysäytetään"
+    kill $FR_PID 2>/dev/null; sleep 2; kill -9 $FR_PID 2>/dev/null
+fi
+wait $FR_PID 2>/dev/null || true
 [ -f "$SES" ] || fail "Freerouting epäonnistui"
 ok "SES: $SES"
 
