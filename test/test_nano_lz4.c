@@ -3,8 +3,9 @@
 #include <string.h>
 #include <stdint.h>
 
-/* Include unit under test */
+/* Include units under test */
 #include "lz4_compress.h"
+#include "compress_proto.h"
 
 /* ---- Test framework (same pattern as test_nano_fastload.c) ---- */
 
@@ -248,6 +249,121 @@ TEST(compress_long_match) {
     ASSERT(roundtrip_ok(src, 256));
 }
 
+/* ---- XZ command channel tests ---- */
+
+TEST(xz_default_disabled) {
+    compress_proto_init();
+    ASSERT(!compress_proto_enabled());
+}
+
+TEST(xz_enable) {
+    compress_proto_init();
+    bool ret = compress_proto_handle_command("XZ:1", 4);
+    ASSERT(ret);
+    ASSERT(compress_proto_enabled());
+}
+
+TEST(xz_disable) {
+    compress_proto_init();
+    compress_proto_handle_command("XZ:1", 4);
+    ASSERT(compress_proto_enabled());
+    bool ret = compress_proto_handle_command("XZ:0", 4);
+    ASSERT(ret);
+    ASSERT(!compress_proto_enabled());
+}
+
+TEST(xz_status_query_disabled) {
+    compress_proto_init();
+    compress_proto_handle_command("XZ:S", 4);
+    char buf[16];
+    int n = compress_proto_get_status(buf, sizeof(buf));
+    ASSERT(n > 0);
+    ASSERT_EQ(strcmp(buf, "XZ:0"), 0);
+}
+
+TEST(xz_status_query_enabled) {
+    compress_proto_init();
+    compress_proto_handle_command("XZ:1", 4);
+    compress_proto_handle_command("XZ:S", 4);
+    char buf[16];
+    int n = compress_proto_get_status(buf, sizeof(buf));
+    ASSERT(n > 0);
+    ASSERT_EQ(strcmp(buf, "XZ:1"), 0);
+}
+
+TEST(xz_not_xz_command) {
+    compress_proto_init();
+    bool ret = compress_proto_handle_command("S:FILE", 6);
+    ASSERT(!ret);
+}
+
+TEST(xz_invalid_subcommand) {
+    compress_proto_init();
+    bool ret = compress_proto_handle_command("XZ:X", 4);
+    ASSERT(!ret);
+}
+
+TEST(xz_case_insensitive) {
+    compress_proto_init();
+    bool ret = compress_proto_handle_command("xz:1", 4);
+    ASSERT(ret);
+    ASSERT(compress_proto_enabled());
+}
+
+TEST(xz_reset_disables) {
+    compress_proto_init();
+    compress_proto_handle_command("XZ:1", 4);
+    ASSERT(compress_proto_enabled());
+    compress_proto_init();
+    ASSERT(!compress_proto_enabled());
+}
+
+/* ---- Block framing tests ---- */
+
+TEST(frame_block_header) {
+    /* Compress 8 bytes, verify 4-byte header and roundtrip */
+    uint8_t raw[] = {0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48};
+    uint8_t out[128];
+    int frame_len = compress_proto_frame_block(raw, 8, out, sizeof(out));
+    ASSERT(frame_len > 4);  /* header + at least 1 byte payload */
+
+    /* Parse header: comp_size LE, raw_size LE */
+    uint16_t comp_size = (uint16_t)(out[0] | (out[1] << 8));
+    uint16_t raw_size = (uint16_t)(out[2] | (out[3] << 8));
+    ASSERT_EQ(raw_size, 8);
+    ASSERT_EQ(frame_len, 4 + comp_size);
+
+    /* Decompress payload and verify roundtrip */
+    uint8_t decomp[64];
+    int dlen = lz4_decompress_block(out + 4, comp_size, decomp, sizeof(decomp));
+    ASSERT_EQ(dlen, 8);
+    ASSERT_EQ(memcmp(raw, decomp, 8), 0);
+}
+
+TEST(frame_eof_marker) {
+    uint8_t out[8];
+    int ret = compress_proto_frame_eof(out, sizeof(out));
+    ASSERT_EQ(ret, 2);
+    ASSERT_EQ(out[0], 0x00);
+    ASSERT_EQ(out[1], 0x00);
+}
+
+TEST(frame_256_byte_block) {
+    /* 256 zeros: highly compressible */
+    uint8_t raw[256];
+    memset(raw, 0x00, 256);
+    uint8_t out[512];
+    int frame_len = compress_proto_frame_block(raw, 256, out, sizeof(out));
+    ASSERT(frame_len > 4);
+
+    /* Parse header */
+    uint16_t comp_size = (uint16_t)(out[0] | (out[1] << 8));
+    uint16_t raw_size = (uint16_t)(out[2] | (out[3] << 8));
+    ASSERT_EQ(raw_size, 256);
+    ASSERT(comp_size < 256);  /* Must actually compress */
+    ASSERT_EQ(frame_len, 4 + comp_size);
+}
+
 /* ---- Main ---- */
 
 int main(void) {
@@ -268,6 +384,22 @@ int main(void) {
     RUN(compress_typical_c64_basic);
     RUN(compress_max_block_size);
     RUN(compress_long_match);
+
+    printf("\nXZ command channel:\n");
+    RUN(xz_default_disabled);
+    RUN(xz_enable);
+    RUN(xz_disable);
+    RUN(xz_status_query_disabled);
+    RUN(xz_status_query_enabled);
+    RUN(xz_not_xz_command);
+    RUN(xz_invalid_subcommand);
+    RUN(xz_case_insensitive);
+    RUN(xz_reset_disables);
+
+    printf("\nBlock framing:\n");
+    RUN(frame_block_header);
+    RUN(frame_eof_marker);
+    RUN(frame_256_byte_block);
 
     printf("\n========================================\n");
     printf("Results: %d/%d passed\n", tests_passed, tests_run);

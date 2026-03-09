@@ -39,7 +39,7 @@ test_nano_shiftreg: test_nano_shiftreg.c
 	$(CC) $(CFLAGS) $(NANO_INCLUDES) -o $@ $^
 
 # Unit tests for LZ4 block compressor
-test_nano_lz4: test_nano_lz4.c $(NANO_SRC)/lz4_compress.c
+test_nano_lz4: test_nano_lz4.c $(NANO_SRC)/lz4_compress.c $(NANO_SRC)/compress_proto.c
 	$(CC) $(CFLAGS) $(NANO_INCLUDES) -o $@ $^
 
 # VICE IEC bridge (host build of CBM-DOS + D64)
