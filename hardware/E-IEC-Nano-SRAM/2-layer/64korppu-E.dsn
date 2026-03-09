@@ -61,7 +61,7 @@
       (place U1 165000.000000 -125000.000000 front 0.000000 (PN Arduino_Nano))
     )
     (component "Package_DIP:DIP-8_W7.62mm_Socket"
-      (place U2 128000.000000 -172000.000000 front 0.000000 (PN 23LC1024))
+      (place U2 128000.000000 -172000.000000 front 0.000000 (PN 23LC256))
     )
     (component "Package_DIP:DIP-16_W7.62mm_Socket"
       (place U3 195000.000000 -172000.000000 front 0.000000 (PN 74HC595))

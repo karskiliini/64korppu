@@ -68,7 +68,7 @@ KiCad 9 hylkää S-expression-tiedostot joissa on `;;`-kommentteja.
 ### 4. Komponenttien sijoittelusäännöt
 - **Älä aseta IC:itä suoraan toistensa päälle tai viereen** — jätä vähintään 5mm IC-pakettien väliin
 - Arduino Nano (2x15, P2.54mm) ulottuu 35.56mm pystysuunnassa
-- Sijoita 74HC595 ja 23LC1024 **eri puolille** Nanoa, ei suoraan alle
+- Sijoita 74HC595 ja 23LC256 **eri puolille** Nanoa, ei suoraan alle
 
 ### 5. Piirilevyn koko
 - Prototyypille 100-120mm per sivu on hyvä

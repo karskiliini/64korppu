@@ -90,7 +90,7 @@ for fp in board.GetFootprints():
 |-------------|-----------|---------|
 | Arduino Nano 2x15 P2.54mm | 2.54 × 35.56 | Iso, sijoita keskelle |
 | DIP-16 W7.62mm | 7.62 × 17.78 | 74HC595 |
-| DIP-8 W7.62mm | 7.62 × 7.62 | 23LC1024 |
+| DIP-8 W7.62mm | 7.62 × 7.62 | 23LC256 |
 | R_Axial P10.16mm | 10.16 vaaka | Pad2 ulottuu 10mm origosta |
 | IDC 2x17 P2.54mm | 2.54 × 40.64 | Erittäin pitkä pystysuunnassa |
 | DIN-6 | ~15mm halk. | Shield-padit ulottuvat kauas keskipisteestä |

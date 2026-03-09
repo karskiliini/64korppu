@@ -6,7 +6,7 @@
 /*
  * 74HC595 shift register driver for floppy output signals.
  *
- * Shares SPI bus with 23LC1024 SRAM. RCLK (latch) on D6.
+ * Shares SPI bus with 23LC256 SRAM. RCLK (latch) on D6.
  * All outputs active-low (HIGH = deasserted).
  *
  * Bit mapping (QA..QH):

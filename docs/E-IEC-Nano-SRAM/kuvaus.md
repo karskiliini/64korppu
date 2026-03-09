@@ -22,7 +22,7 @@ Picon monimutkaisuutta, ja säilytetään Nanon 5V-etu (ei tasonmuuntimia).
 
 ## SRAM-vaihtoehdot
 
-### Vaihtoehto 1: 23K256 SPI SRAM (Valittu)
+### Vaihtoehto 1: 23LC256 SPI SRAM (Valittu)
 
 | Ominaisuus | Arvo |
 |---|---|
@@ -56,7 +56,7 @@ osoiteväylän multipleksointiin. Mahdollinen mutta monimutkainen.
 - Löytyy vanhoista C64-koneista, Amiga-laajennuksista, jne.
 - Sama ongelma kuin 62256: liikaa pinnejä
 
-### Suositus: 23K256 (SPI)
+### Suositus: 23LC256 (SPI)
 
 SPI-liitäntä on ylivoimainen Nano-projektissa:
 - Vain 4 pinniä (vs. 23+ rinnakkaiselle)
@@ -64,7 +64,7 @@ SPI-liitäntä on ylivoimainen Nano-projektissa:
 - 32 KB riittää (todellinen käyttö ~22 KB)
 - 5V natiivi
 
-## Muistikartta (23K256, 32 KB)
+## Muistikartta (23LC256, 32 KB)
 
 ```
 SRAM-osoite    Käyttö                    Koko
@@ -91,7 +91,7 @@ Nanon sisäinen 2 KB RAM käytetään:
 | Komponentti | Kuvaus | Hinta (arvio) |
 |---|---|---|
 | Arduino Nano (klooni) | ATmega328P, 16 MHz, 5V | ~3-5€ |
-| 23K256 | 32KB SPI SRAM, DIP-8 | ~1€ |
+| 23LC256 | 32KB SPI SRAM, DIP-8 | ~1€ |
 | 6-pin DIN -liitin | IEC-väylä C64:lle | ~2€ |
 | 34-pin IDC -liitin | PC-floppy | ~1€ |
 | 4-pin Berg liitin | Virta floppy-asemalle | ~1€ |
@@ -101,9 +101,9 @@ Nanon sisäinen 2 KB RAM käytetään:
 
 ## GPIO-allokaatio
 
-### SPI-väylä (Nano ↔ 23K256)
+### SPI-väylä (Nano ↔ 23LC256)
 
-| Nano-pinni | SPI-signaali | 23K256 pin | Huomio |
+| Nano-pinni | SPI-signaali | 23LC256 pin | Huomio |
 |---|---|---|---|
 | D13 (SCK) | SPI Clock | pin 6 (SCK) | Jaettu floppy /WGATE kanssa! |
 | D11 (MOSI) | SPI Data In | pin 5 (SI) | Jaettu floppy /STEP kanssa! |
@@ -124,9 +124,9 @@ IEC-väylä (suora 5V kytkentä):
 
 SPI SRAM:
   D10 = /CS (SRAM chip select)
-  D11 = MOSI (SPI data out)  → 23K256 SI
-  D12 = MISO (SPI data in)   ← 23K256 SO
-  D13 = SCK  (SPI clock)     → 23K256 SCK
+  D11 = MOSI (SPI data out)  → 23LC256 SI
+  D12 = MISO (SPI data in)   ← 23LC256 SO
+  D13 = SCK  (SPI clock)     → 23LC256 SCK
 
 Floppy output (uudelleenjärjestelty!):
   D6  = /DENSITY
@@ -205,7 +205,7 @@ Vapaat:
 ```
 ┌──────────────────────────────────────┐
 │        Arduino Nano Firmware         │
-│        + 23K256 SRAM               │
+│        + 23LC256 SRAM               │
 ├──────────────────────────────────────┤
 │  SPI SRAM -ajuri                     │
 │  (sram_read, sram_write, sram_seq)   │
@@ -231,10 +231,10 @@ RAM-käyttö:
   SRAM 32KB: raitapuskuri, FAT-cache, sektorit, hakemisto
 ```
 
-### SPI SRAM -käyttö (23K256)
+### SPI SRAM -käyttö (23LC256)
 
 ```c
-// 23K256 SPI komennot (samat kuin 23LC1024)
+// 23LC256 SPI komennot (samat kuin 23LC1024)
 #define SRAM_READ   0x03   // Lue data
 #define SRAM_WRITE  0x02   // Kirjoita data
 #define SRAM_RDMR   0x05   // Lue mode register
@@ -244,7 +244,7 @@ RAM-käyttö:
 // Osoite kasvaa automaattisesti → voi lukea/kirjoittaa
 // pitkiä lohkoja yhdellä SPI-transaktiolla.
 
-// 23K256 käyttää 16-bit osoitteita (vs. 23LC1024:n 24-bit)
+// 23LC256 käyttää 16-bit osoitteita (vs. 23LC1024:n 24-bit)
 void sram_read(uint32_t addr, uint8_t *buf, uint16_t len) {
     digitalWrite(CS_SRAM, LOW);
     SPI.transfer(SRAM_READ);
@@ -295,7 +295,7 @@ Vaihtoehto E (SRAM:lla):
 
 ## Plussat
 
-- **Ei tasonmuuntimia** — 5V natiivi (Nano + 23K256 + floppy)
+- **Ei tasonmuuntimia** — 5V natiivi (Nano + 23LC256 + floppy)
 - **Riittävästi muistia** — 32 KB SRAM ratkaisee Nanon 2 KB rajoituksen
 - Koko FAT-taulu mahtuu SRAM:iin → nopea tiedostohaku
 - Raitapuskuri mahdollinen → luotettavampi MFM-dekoodaus

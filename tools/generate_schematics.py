@@ -777,7 +777,7 @@ def generate_e():
     ax.set_aspect('equal')
     ax.axis('off')
     fig.patch.set_facecolor('white')
-    ax.set_title('Vaihtoehto E: IEC + Arduino Nano + 23LC1024 SPI SRAM — Piirikaavio',
+    ax.set_title('Vaihtoehto E: IEC + Arduino Nano + 23LC256 SPI SRAM — Piirikaavio',
                  fontsize=15, fontweight='bold', pad=20)
 
     # ---- IEC DIN ----
@@ -831,8 +831,8 @@ def generate_e():
         draw_wire(ax, [(2.0, sig_y), (2.5, sig_y), (2.5, nano_py), (3.0, nano_py)],
                   color='#388E3C', lw=1.2)
 
-    # ---- 23LC1024 SPI SRAM ----
-    draw_ic(ax, 3, -2, 3.0, 2.5, '23LC1024', [
+    # ---- 23LC256 SPI SRAM ----
+    draw_ic(ax, 3, -2, 3.0, 2.5, '23LC256', [
         ('1', '/CS ← D10'),
         ('5', 'SI ← D11 (MOSI)'),
         ('6', 'SCK ← D13'),

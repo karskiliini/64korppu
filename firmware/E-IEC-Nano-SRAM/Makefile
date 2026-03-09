@@ -1,4 +1,4 @@
-# 64korppu Alternative E: Arduino Nano + 23LC1024 SPI SRAM
+# 64korppu Alternative E: Arduino Nano + 23LC256 SPI SRAM
 #
 # Requires: avr-gcc, avr-objcopy, avrdude
 # Install on macOS: brew install avr-gcc avrdude

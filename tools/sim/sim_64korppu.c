@@ -2,7 +2,7 @@
  * 64korppu SimAVR simulation harness.
  *
  * Simulates ATmega328P running the 64korppu firmware with:
- *   - Virtual 23LC1024 128KB SPI SRAM
+ *   - Virtual 23LC256 32KB SPI SRAM
  *   - Virtual 74HC595 shift register (floppy control signals)
  *   - Virtual floppy drive (TRK00, WPT, DSKCHG, RDATA)
  *   - Virtual IEC bus (ATN, CLK, DATA stimulus)
@@ -26,9 +26,9 @@
 #include <simavr/avr_uart.h>
 #include <simavr/avr_timer.h>
 
-/* ── Virtual 23LC1024 SPI SRAM ─────────────────────────────────────── */
+/* ── Virtual 23LC256 SPI SRAM ──────────────────────────────────────── */
 
-#define SRAM_SIZE       (128 * 1024)
+#define SRAM_SIZE       (32 * 1024)
 #define SRAM_CMD_READ   0x03
 #define SRAM_CMD_WRITE  0x02
 #define SRAM_CMD_RDMR   0x05
@@ -37,9 +37,8 @@
 typedef enum {
     SRAM_IDLE,
     SRAM_CMD_RECEIVED,
-    SRAM_ADDR_0,
-    SRAM_ADDR_1,
-    SRAM_ADDR_2,
+    SRAM_ADDR_HI,
+    SRAM_ADDR_LO,
     SRAM_READING,
     SRAM_WRITING,
     SRAM_RDMR_RESP,
@@ -102,7 +101,7 @@ static void uart_output_hook(struct avr_irq_t *irq, uint32_t value, void *param)
     fflush(stdout);
 }
 
-/* ── SPI hook (23LC1024 SRAM emulation) ────────────────────────────── */
+/* ── SPI hook (23LC256 SRAM emulation) ─────────────────────────────── */
 
 static void spi_output_hook(struct avr_irq_t *irq, uint32_t value, void *param)
 {
@@ -132,7 +131,7 @@ static void spi_output_hook(struct avr_irq_t *irq, uint32_t value, void *param)
         } else if (byte_out == SRAM_CMD_RDMR) {
             sram.state = SRAM_RDMR_RESP;
         } else if (byte_out == SRAM_CMD_READ || byte_out == SRAM_CMD_WRITE) {
-            sram.state = SRAM_ADDR_0;
+            sram.state = SRAM_ADDR_HI;
         } else {
             if (verbose)
                 printf("[SRAM] Unknown cmd: 0x%02X\n", byte_out);
@@ -154,20 +153,15 @@ static void spi_output_hook(struct avr_irq_t *irq, uint32_t value, void *param)
         sram.state = SRAM_IDLE;
         break;
 
-    case SRAM_ADDR_0:
-        sram.addr = (uint32_t)(byte_out & 0x01) << 16;
-        sram.state = SRAM_ADDR_1;
+    case SRAM_ADDR_HI:
+        sram.addr = (uint32_t)byte_out << 8;
+        sram.state = SRAM_ADDR_LO;
         break;
 
-    case SRAM_ADDR_1:
-        sram.addr |= (uint32_t)byte_out << 8;
-        sram.state = SRAM_ADDR_2;
-        break;
-
-    case SRAM_ADDR_2:
+    case SRAM_ADDR_LO:
         sram.addr |= byte_out;
         if (verbose)
-            printf("[SRAM] %s addr=0x%05X\n",
+            printf("[SRAM] %s addr=0x%04X\n",
                    sram.cmd == SRAM_CMD_READ ? "READ" : "WRITE",
                    sram.addr);
         sram.state = (sram.cmd == SRAM_CMD_READ) ?

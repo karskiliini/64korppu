@@ -205,7 +205,7 @@ kytkennällä, mutta tämä vaatii testausta.
 |---|---|---|
 | **Raspberry Pi Pico** | ~4-5€ | Paras kokonaisuus: PIO, dual-core, 264 KB RAM |
 | **Raspberry Pi Pico 2** | ~5-6€ | Picon seuraaja, PIO v2, enemmän RAM:ia |
-| **Arduino Nano + 23LC1024** | ~6-8€ | Edullisin 5V-ratkaisu, ei tasonmuuntimia |
+| **Arduino Nano + 23LC256** | ~6-8€ | Edullisin 5V-ratkaisu, ei tasonmuuntimia |
 | **Arduino Mega 2560** | ~8-12€ | 8 KB RAM + 54 GPIO, 5V, ei SRAM:ia välttämättä tarvita |
 
 ### Tier 2: Toimivia vaihtoehtoja

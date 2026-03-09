@@ -19,7 +19,7 @@
 #include "fastload_epyx.h"
 
 /*
- * 64korppu — Alternative E: Arduino Nano + 23LC1024 SPI SRAM
+ * 64korppu — Alternative E: Arduino Nano + 23LC256 SPI SRAM
  *
  * C64 IEC serial bus ↔ PC 3.5" HD floppy via ATmega328P.
  * Single-core: IEC and floppy operations are interleaved.

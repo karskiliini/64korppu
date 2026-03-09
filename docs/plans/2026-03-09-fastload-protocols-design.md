@@ -1,7 +1,7 @@
 # Fast-Load Protocol Support — Design Document
 
 **Päivämäärä:** 2026-03-09
-**Kohde:** firmware/E-IEC-Nano-SRAM (Arduino Nano + 23LC1024)
+**Kohde:** firmware/E-IEC-Nano-SRAM (Arduino Nano + 23LC256)
 
 ## Tavoite
 

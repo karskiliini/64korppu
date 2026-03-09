@@ -12,7 +12,7 @@
 | Ref | Komponentti | Paketti | Kpl |
 |-----|-------------|---------|-----|
 | U1 | Arduino Nano | 2×15 pin header | 1 |
-| U2 | 23LC1024 | DIP-8 | 1 |
+| U2 | 23LC256 | DIP-8 | 1 |
 | U3 | 74HC595 | DIP-16 | 1 |
 | J1 | 6-pin DIN | DIN-6 (IEC) | 1 |
 | J2 | 34-pin IDC | 2×17 shrouded header | 1 |
@@ -40,7 +40,7 @@ IEC pull-up:
   R6: +5V → J1.CLK (after R2)
   R7: +5V → J1.DATA (after R3)
 
-SPI SRAM (23LC1024):
+SPI SRAM (23LC256):
   U1.D10  → U2./CS
   U1.D11  → U2.SI
   U1.D12  ← U2.SO

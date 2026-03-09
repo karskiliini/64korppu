@@ -1192,7 +1192,7 @@
 				)
 			)
 		)
-		(property "Value" "23LC1024"
+		(property "Value" "23LC256"
 			(at 140 195 0)
 			(layer "F.Fab")
 			(uuid "b000000c-0001-4000-8000-000000000003")

@@ -5,7 +5,7 @@
 #include <stdbool.h>
 
 /*
- * 23K256 SPI SRAM driver (32KB).
+ * 23LC256 SPI SRAM driver (32KB).
  *
  * SPI commands (same as 23LC1024):
  *   0x03 = READ   - Read data from address

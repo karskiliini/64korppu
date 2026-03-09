@@ -6,10 +6,10 @@
 
 /*
  * Hardware configuration for Alternative E:
- * Arduino Nano (ATmega328P) + 23LC1024 SPI SRAM + 74HC595 shift register
+ * Arduino Nano (ATmega328P) + 23LC256 SPI SRAM + 74HC595 shift register
  */
 
-/* --- SRAM Memory Map (23K256, 32KB) --- */
+/* --- SRAM Memory Map (23LC256, 32KB) --- */
 
 #define SRAM_SIZE           0x8000UL    /* 32768 bytes */
 

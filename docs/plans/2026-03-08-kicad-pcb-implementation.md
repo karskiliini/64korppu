@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Generate a complete KiCad 8 project for vaihtoehto E (Arduino Nano + 23LC1024 + 74HC595) PCB, ready for Freerouting autorouting and Gerber export.
+**Goal:** Generate a complete KiCad 8 project for vaihtoehto E (Arduino Nano + 23LC256 + 74HC595) PCB, ready for Freerouting autorouting and Gerber export.
 
 **Architecture:** Three KiCad files generated as S-expressions/JSON: `.kicad_pro` (project config), `.kicad_sch` (schematic with all symbols, wires, and nets), `.kicad_pcb` (board outline, footprint placement, net assignments, GND zone). A custom DIN-6 footprint is created since KiCad's standard library lacks one. Tracks are left to Freerouting.
 
@@ -104,7 +104,7 @@ This task creates the file with header and all lib_symbols.
 | Ref | Symbol | Pins |
 |-----|--------|------|
 | U1 | Arduino Nano module | 30 pins (2×15 headers: D0-D13, A0-A7, VIN, GND, RST, 5V, 3V3, AREF) |
-| U2 | 23LC1024 (generic 8-pin SPI SRAM) | 8 pins: /CS, SO, NC, VSS, SI, SCK, /HOLD, VCC |
+| U2 | 23LC256 (generic 8-pin SPI SRAM) | 8 pins: /CS, SO, NC, VSS, SI, SCK, /HOLD, VCC |
 | U3 | 74HC595 | 16 pins: QB,QC,QD,QE,QF,QG,QH,GND,QH',SRCLK,RCLK,/OE,SER,QA,/CLR,VCC |
 | J1 | DIN-6 connector | 6 pins |
 | J2 | 2×17 IDC header | 34 pins |
@@ -114,7 +114,7 @@ This task creates the file with header and all lib_symbols.
 | C4 | Capacitor polarized | 2 pins |
 | D1 | LED | 2 pins (A, K) |
 
-Use standard KiCad lib symbols for all except Arduino Nano (custom symbol with 2×15 pin headers) and 23LC1024 (custom 8-pin IC).
+Use standard KiCad lib symbols for all except Arduino Nano (custom symbol with 2×15 pin headers) and 23LC256 (custom 8-pin IC).
 
 **Step 1: Write schematic header and lib_symbols**
 
@@ -158,7 +158,7 @@ Use the netlist from `docs/plans/2026-03-08-kicad-pcb-design.md`.
 ```
   Left side (x=30):    Center (x=130):     Right side (x=230):
   J1 DIN-6 (IEC)       U1 Arduino Nano     J2 34-pin IDC (floppy)
-  R1-R4 (1k series)    U2 23LC1024          R9-R12 (10k pull-ups)
+  R1-R4 (1k series)    U2 23LC256          R9-R12 (10k pull-ups)
   R5-R7 (4.7k pullup)  U3 74HC595
 
   Top center (x=130, y=30):

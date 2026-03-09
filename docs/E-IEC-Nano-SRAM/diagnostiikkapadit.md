@@ -74,7 +74,7 @@ Kaikki floppy-signaalit ovat aktiivisia LOW-tilassa (negatiivinen logiikka).
 
 ### SPI-väylä (TP11-TP14)
 
-SPI-väylä on jaettu 23K256 SRAM:n ja 74HC595 shift registerin kesken.
+SPI-väylä on jaettu 23LC256 SRAM:n ja 74HC595 shift registerin kesken.
 SCK ja MOSI menevät molemmille, MISO tulee vain SRAM:lta. CS_SRAM valitsee SRAM:n.
 
 | Padi | Signaali | Lepotila | Aktiivinen | Merkitys |
@@ -125,4 +125,4 @@ SCK ja MOSI menevät molemmille, MISO tulee vain SRAM:lta. CS_SRAM valitsee SRAM
 | Floppy ei pyöri | TP6 (MOTOR) | IDC-kaapeli, floppy-virta, 74HC595 |
 | Ei lue levyä | TP8 (RDATA) | Asema viallinen, levy viallinen, lukupää |
 | SPI ei toimi | TP11 (SCK) | Arduino SPI-alustus, piirin kytös |
-| SRAM-virhe | TP13, TP14 | 23K256 viallinen, kylmäjuotos |
+| SRAM-virhe | TP13, TP14 | 23LC256 viallinen, kylmäjuotos |

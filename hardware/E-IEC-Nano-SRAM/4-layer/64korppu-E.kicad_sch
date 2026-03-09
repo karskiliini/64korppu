@@ -330,14 +330,14 @@
         )
       )
     )
-    (symbol "64korppu-E:23LC1024"
+    (symbol "64korppu-E:23LC256"
       (in_bom yes)
       (on_board yes)
       (property "Reference" "U"
         (at 0 8.89 0)
         (effects (font (size 1.27 1.27)))
       )
-      (property "Value" "23LC1024"
+      (property "Value" "23LC256"
         (at 0 -8.89 0)
         (effects (font (size 1.27 1.27)))
       )
@@ -345,13 +345,13 @@
         (at 0 -11.43 0)
         (effects (font (size 1.27 1.27)) hide)
       )
-      (symbol "23LC1024_0_1"
+      (symbol "23LC256_0_1"
         (rectangle (start -7.62 7.62) (end 7.62 -7.62)
           (stroke (width 0.254) (type default))
           (fill (type background))
         )
       )
-      (symbol "23LC1024_1_1"
+      (symbol "23LC256_1_1"
         (pin input line
           (at -10.16 5.08 0)
           (length 2.54)
@@ -1816,13 +1816,13 @@
       )
     )
   )
-  (symbol (lib_id "64korppu-E:23LC1024") (at 101.60 162.56 0)
+  (symbol (lib_id "64korppu-E:23LC256") (at 101.60 162.56 0)
     (uuid "8f302e83-62c1-494c-899f-72360c3d427c")
     (property "Reference" "U2"
       (at 101.60 160.02 0)
       (effects (font (size 1.27 1.27)))
     )
-    (property "Value" "23LC1024"
+    (property "Value" "23LC256"
       (at 101.60 165.10 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -3665,7 +3665,7 @@
   (no_connect (at 29.21 96.52)
     (uuid "a54bf2fa-2fd3-4a99-bc43-1ce3b6ee246b")
   )
-  (text "64korppu - Vaihtoehto E\nArduino Nano + 23LC1024 SPI SRAM + 74HC595"
+  (text "64korppu - Vaihtoehto E\nArduino Nano + 23LC256 SPI SRAM + 74HC595"
     (at 210 15 0)
     (effects (font (size 3.81 3.81)) (justify left))
     (uuid "74506a43-8d49-4b0b-a9ba-93888365f720")
