@@ -113,7 +113,7 @@ lähetetään lohkoissa normaalin tavuvirran sijaan.
 | Kenttä | Koko | Arvoalue | Kuvaus |
 |--------|------|----------|--------|
 | compressed_size | 2B LE | 0–512 | 0 = EOF, 1–512 = pakattu koko |
-| raw_size | 2B LE | 1–256 | Puretun datan koko |
+| raw_size | 2B LE | 1–128 | Puretun datan koko (COMPRESS_BLOCK_SIZE) |
 | payload | N tavua | — | LZ4 block -formaatti |
 
 ### Esimerkkisiirto

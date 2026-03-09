@@ -1,7 +1,9 @@
 /*
  * Minimal LZ4 block compressor for 64korppu IEC transfer.
  *
- * - 256-entry hash table (512 bytes on stack)
+ * Hash-taulun koko määritetään config.h:ssa (COMPRESS_HASH_SIZE).
+ * Oletuksena 128 entryä × 2 tavua = 256 tavua pinossa.
+ *
  * - Standard LZ4 block format (raw, no frame header)
  * - Min match length: 4
  * - Last 5 bytes always literals (LZ4 spec)
@@ -9,16 +11,17 @@
  */
 
 #include "lz4_compress.h"
+#include "config.h"
 #include <string.h>
 
-#define HASH_SIZE     256
+#define HASH_SIZE     COMPRESS_HASH_SIZE
 #define MIN_MATCH     4
 #define LAST_LITERALS 5
 
-/* Hash function: multiply + shift */
+/* Hash function: multiply + shift, masked to HASH_SIZE */
 static inline uint8_t lz4_hash(uint32_t v)
 {
-    return (uint8_t)((v * 2654435761U) >> 24);
+    return (uint8_t)(((v * 2654435761U) >> 24) & (HASH_SIZE - 1));
 }
 
 static inline uint32_t read32(const uint8_t *p)

@@ -158,7 +158,27 @@
 
 /* --- LZ4 Compression --- */
 
-#define COMPRESS_BLOCK_SIZE     256     /* Raw bytes per compression block */
-#define COMPRESS_FRAME_BUF_SIZE 300     /* Max framed block (header + LZ4) */
+/*
+ * COMPRESS_BLOCK_SIZE: raakadatan lohkokoko tavuina.
+ * Suurempi lohko = parempi pakkaus, mutta enemmän RAMia:
+ *
+ *   Lohko   raw_buf   frame_buf   hash (pino)   Yhteensä   Pakkaus
+ *   ─────   ───────   ─────────   ───────────   ────────   ───────
+ *    64B      64B       100B       128B (64×2)    292B      ~1.3:1
+ *   128B     128B       172B       256B (128×2)   556B      ~1.5:1
+ *   256B     256B       300B       512B (256×2)  1068B      ~1.8:1
+ *
+ * ATmega328P:ssa 2KB RAM — 128B on turvallinen valinta.
+ * Suurempaa voi kokeilla jos RAM riittää (tarkista avr-size:lla).
+ *
+ * COMPRESS_HASH_SIZE pitää olla sama kuin COMPRESS_BLOCK_SIZE
+ * (hash-taulun koko = lohkokoko entryjä × 2 tavua pinossa).
+ *
+ * COMPRESS_FRAME_BUF_SIZE = 4 (header) + BLOCK_SIZE + BLOCK_SIZE/255 + 16
+ * (worst case: ei-pakattava data + LZ4 token overhead).
+ */
+#define COMPRESS_BLOCK_SIZE     128
+#define COMPRESS_HASH_SIZE      128
+#define COMPRESS_FRAME_BUF_SIZE 172
 
 #endif /* CONFIG_H */
