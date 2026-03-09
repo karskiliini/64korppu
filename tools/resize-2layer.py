@@ -90,8 +90,8 @@ def compute_layout(W, H):
     # If board is small, put DIN-6 further up
     if j1_y - 8 < nano_y + 36.5 + 2:
         j1_y = nano_y + 36.5 + 10
-    if j1_y + 8 > bottom - 3:
-        j1_y = bottom - 11
+    if j1_y + 8 > bottom - M - 4:  # clearance from H3 mounting hole body
+        j1_y = bottom - M - 12
     positions['J1'] = (j1_x, j1_y, 0)
 
     # IEC series resistors R1-R4 (between DIN-6 and Nano)
@@ -103,15 +103,20 @@ def compute_layout(W, H):
         positions[r] = (r_base_x, r_base_y + i * r_spacing, 0)
 
     # IEC pull-up resistors R5-R7 (next to R1-R4 or below)
-    for i, r in enumerate(['R5', 'R6', 'R7']):
-        positions[r] = (r_base_x, r_base_y + (i + 4) * r_spacing, 0)
-
-    # Floppy pull-up resistors R9-R12 (between Nano and IDC)
-    r9_x = nano_x + 20
-    r9_y = nano_y + 5
-    r9_spacing = min(7, (j2_y + 35 - r9_y) / 4)
-    for i, r in enumerate(['R9', 'R10', 'R11', 'R12']):
-        positions[r] = (r9_x, r9_y + i * r9_spacing, 0)
+    # Place normally first, then compress if overlapping J1
+    r5_y = r_base_y + 4 * r_spacing
+    r6_y = r_base_y + 5 * r_spacing
+    r7_y = r_base_y + 6 * r_spacing
+    r7_max = j1_y - 8 - 3  # max y for R7 (clearance from J1 body top)
+    if r7_y > r7_max:
+        # Compress R5-R7 stack to fit above J1
+        r567_spacing = min(r_spacing, 4.0)
+        r7_y = r7_max
+        r6_y = r7_max - r567_spacing
+        r5_y = r7_max - 2 * r567_spacing
+    positions['R5'] = (r_base_x, r5_y, 0)
+    positions['R6'] = (r_base_x, r6_y, 0)
+    positions['R7'] = (r_base_x, r7_y, 0)
 
     # SRAM DIP-8 — below Nano, left side
     # Body: -1.5 to +9 wide, -1.5 to +9 tall
@@ -129,35 +134,63 @@ def compute_layout(W, H):
         u3_y = bottom - 25
     positions['U3'] = (u3_x, u3_y, 0)
 
+    # Floppy pull-up resistors R9-R12 (between Nano and IDC)
+    r9_x = nano_x + 20
+    r9_y = nano_y + 5
+    r9_spacing = min(7, max(3.5, (j2_y + 35 - r9_y) / 4))
+    for i, r in enumerate(['R9', 'R10', 'R11', 'R12']):
+        positions[r] = (r9_x, r9_y + i * r9_spacing, 0)
+
     # LED + resistor — near barrel jack, top area
-    # Avoid bottom where J1 and H3 can collide
-    d1_x = j3_x + 25
+    # Position between barrel jack and electrolytic cap
+    d1_x = j3_x + 12
     d1_y = top + 7
     r8_x = d1_x + 6
     r8_y = d1_y
+    # If overlapping C4, shift right
+    if abs(d1_x - c4_x) < 8:
+        d1_x = c4_x + 8
+        r8_x = d1_x + 6
     positions['D1'] = (d1_x, d1_y, 0)
     positions['R8'] = (r8_x, r8_y, 0)
 
-    # Bypass caps near ICs (avoid placing C1 near U3)
-    c1_x = u2_x - 10  # left of U2 with clearance
+    # Bypass caps near ICs
+    # C1: SRAM bypass — left of U2, with clearance from J1
+    c1_x = max(u2_x - 10, j1_x + 8 + 2)  # clear of J1 body right edge
     c1_y = u2_y + 2
+    # If C1 collides with U3, move between U2 and J1
+    u3_body = (u3_x - 1.5, u3_y - 1.5, u3_x + 9, u3_y + 20)
+    if c1_x + 6 > u3_body[0] and c1_x - 1 < u3_body[2] and c1_y + 2.5 > u3_body[1] and c1_y - 2.5 < u3_body[3]:
+        c1_x = max(u2_x - 10, j1_x + 8 + 4)
+        c1_y = min(u2_y + 2, u3_body[1] - 4)
+    positions['C1'] = (c1_x, c1_y, 0)
+
+    # C2: 595 bypass — right of U3
     c2_x = u3_x + 12
     c2_y = u3_y + 2
-    c3_x = nano_x + 10
-    c3_y = nano_y - 5
+    positions['C2'] = (c2_x, c2_y, 0)
+
+    # C3: Nano bypass — right of Nano, above R9 area
+    c3_x = nano_x + 20
+    c3_y = nano_y - 3
     if c3_y < top + 5:
         c3_y = top + 5
-    positions['C1'] = (c1_x, c1_y, 0)
-    positions['C2'] = (c2_x, c2_y, 0)
+    # Avoid R8 body (r8_x-1.5 to r8_x+11.5)
+    if c3_x - 1 < r8_x + 11.5 + 1 and abs(c3_y - r8_y) < 5:
+        c3_x = r8_x + 11.5 + 2  # move right of R8
+    # Fallback: between barrel jack and Nano if right side is too far
+    if c3_x + 6 > right - 15:
+        c3_x = max(j3_x + 9 + 2, nano_x - 2 - 8)
     positions['C3'] = (c3_x, c3_y, 0)
 
     # Test points — left edge on B.Cu, vertical line
     tp_x = left + 3
     tp_y_start = top + 8
-    tp_spacing = 2.5
-    # If board is very small, use tighter spacing
-    if H < 80:
-        tp_spacing = 2.2
+    tp_spacing = 2.7  # minimum to avoid body collisions (1.5mm pads)
+    # Need 14 TPs * spacing to fit in board height
+    max_tp_height = H - 16  # margins top+bottom
+    if 14 * tp_spacing > max_tp_height:
+        tp_spacing = max_tp_height / 14
     for i in range(14):
         tp_name = f'TP{i+1}'
         positions[tp_name] = (tp_x, tp_y_start + i * tp_spacing, 0)
