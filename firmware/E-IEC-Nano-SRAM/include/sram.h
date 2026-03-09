@@ -5,9 +5,9 @@
 #include <stdbool.h>
 
 /*
- * 23LC1024 SPI SRAM driver (128KB).
+ * 23K256 SPI SRAM driver (32KB).
  *
- * SPI commands:
+ * SPI commands (same as 23LC1024):
  *   0x03 = READ   - Read data from address
  *   0x02 = WRITE  - Write data to address
  *   0x05 = RDMR   - Read mode register
@@ -20,6 +20,8 @@
  *
  * We use sequential mode for bulk transfers and
  * byte mode for random access.
+ *
+ * 16-bit addresses (vs 24-bit on 23LC1024). Same DIP-8 pinout.
  */
 
 #define SRAM_CMD_READ    0x03

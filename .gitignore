@@ -20,6 +20,8 @@ test/test_cbmfs
 test/test_format
 test/test_nano_fat12
 test/test_nano_fastload
+test/test_nano_shiftreg
+tools/sim/sim_64korppu
 *.dSYM/
 .claude/
 .DS_Store

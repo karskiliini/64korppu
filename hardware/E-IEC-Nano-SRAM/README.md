@@ -1,6 +1,6 @@
 # 64korppu-E — Hardware
 
-> Arduino Nano + 23LC1024 SPI SRAM + 74HC595
+> Arduino Nano + 23K256 SPI SRAM + 74HC595
 
 ## 4-layer (70x60mm)
 

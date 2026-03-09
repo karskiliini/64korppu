@@ -7,11 +7,14 @@
 #include <util/delay.h>
 
 /*
- * 23LC1024 SPI SRAM driver for ATmega328P.
+ * 23K256 SPI SRAM driver for ATmega328P.
  *
- * SPI at F_CPU/2 = 8 MHz (maximum for 23LC1024 at 5V).
+ * SPI at F_CPU/2 = 8 MHz (maximum for 23K256 at 5V).
  * Sequential mode for bulk transfers.
  * /CS on PB2 (D10).
+ *
+ * 23K256 uses 16-bit addresses (32KB), unlike 23LC1024 (24-bit, 128KB).
+ * Same pinout and SPI commands — drop-in replacement.
  */
 
 #define CS_LOW()    (PORTB &= ~(1 << SPI_CS_SRAM))
@@ -24,7 +27,6 @@ static inline uint8_t spi_transfer(uint8_t data) {
 }
 
 static void sram_send_addr(uint32_t addr) {
-    spi_transfer((addr >> 16) & 0xFF);
     spi_transfer((addr >> 8) & 0xFF);
     spi_transfer(addr & 0xFF);
 }

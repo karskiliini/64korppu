@@ -10,8 +10,8 @@
  * All outputs active-low (HIGH = deasserted).
  *
  * Bit mapping (QA..QH):
- *   0: /DENSITY  1: /MOTEA  2: /DRVSEL  3: /MOTOR
- *   4: /DIR      5: /STEP   6: /WGATE   7: /SIDE1
+ *   0: /SIDE1    1: /DENSITY  2: /MOTEA   3: /DRVSEL
+ *   4: /MOTOR    5: /DIR      6: /STEP    7: /WGATE
  */
 
 void shiftreg_init(void);

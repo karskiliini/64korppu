@@ -9,9 +9,9 @@
  * Arduino Nano (ATmega328P) + 23LC1024 SPI SRAM + 74HC595 shift register
  */
 
-/* --- SRAM Memory Map (23LC1024, 128KB) --- */
+/* --- SRAM Memory Map (23K256, 32KB) --- */
 
-#define SRAM_SIZE           0x20000UL   /* 131072 bytes */
+#define SRAM_SIZE           0x8000UL    /* 32768 bytes */
 
 #define SRAM_MFM_TRACK      0x00000UL   /* MFM raw track buffer */
 #define SRAM_MFM_TRACK_SIZE 12496
@@ -100,14 +100,14 @@
 
 /* --- 74HC595 Shift Register Bit Assignments --- */
 
-#define SR_BIT_DENSITY   0    /* QA = /DENSITY */
-#define SR_BIT_MOTEA     1    /* QB = /MOTEA */
-#define SR_BIT_DRVSEL    2    /* QC = /DRVSEL */
-#define SR_BIT_MOTOR     3    /* QD = /MOTOR */
-#define SR_BIT_DIR       4    /* QE = /DIR */
-#define SR_BIT_STEP      5    /* QF = /STEP */
-#define SR_BIT_WGATE     6    /* QG = /WGATE */
-#define SR_BIT_SIDE1     7    /* QH = /SIDE1 */
+#define SR_BIT_SIDE1     0    /* QA (pin 15) = /SIDE1 */
+#define SR_BIT_DENSITY   1    /* QB (pin  1) = /DENSITY */
+#define SR_BIT_MOTEA     2    /* QC (pin  2) = /MOTEA */
+#define SR_BIT_DRVSEL    3    /* QD (pin  3) = /DRVSEL */
+#define SR_BIT_MOTOR     4    /* QE (pin  4) = /MOTOR */
+#define SR_BIT_DIR       5    /* QF (pin  5) = /DIR */
+#define SR_BIT_STEP      6    /* QG (pin  6) = /STEP */
+#define SR_BIT_WGATE     7    /* QH (pin  7) = /WGATE */
 
 /* Default: all deasserted (HIGH for active-low signals) */
 #define SR_DEFAULT       0xFF
