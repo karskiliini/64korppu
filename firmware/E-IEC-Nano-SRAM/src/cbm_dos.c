@@ -5,6 +5,7 @@
 #include "sram.h"
 #include "fastload_burst.h"
 #include "fastload_epyx.h"
+#include "compress_proto.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -28,6 +29,15 @@ static fat12_file_t channel_file;
 static uint16_t dir_len = 0;
 static uint16_t dir_pos = 0;
 static bool dir_active = false;
+
+/* Compressed transfer state */
+static uint8_t  comp_raw_buf[256];
+static uint8_t  comp_frame_buf[300];
+static uint16_t comp_raw_pos;
+static uint16_t comp_frame_len;
+static uint16_t comp_frame_pos;
+static bool     comp_filling;
+static bool     comp_eof_sent;
 
 void cbm_dos_init(void) {
     memset(&channel_file, 0, sizeof(channel_file));
@@ -181,6 +191,12 @@ void cbm_dos_open(uint8_t sa, const char *filename, uint8_t len) {
         /* Directory listing? */
         if (sa == IEC_SA_LOAD && len == 1 && filename[0] == '$') {
             generate_directory();
+            /* Reset compression buffers for new transfer */
+            comp_raw_pos = 0;
+            comp_frame_len = 0;
+            comp_frame_pos = 0;
+            comp_filling = true;
+            comp_eof_sent = false;
             iec_set_error(CBM_ERR_OK, "OK", 0, 0);
             return;
         }
@@ -204,6 +220,12 @@ void cbm_dos_open(uint8_t sa, const char *filename, uint8_t len) {
                 return;
             }
         }
+        /* Reset compression buffers for new transfer */
+        comp_raw_pos = 0;
+        comp_frame_len = 0;
+        comp_frame_pos = 0;
+        comp_filling = true;
+        comp_eof_sent = false;
         iec_set_error(CBM_ERR_OK, "OK", 0, 0);
     }
 }
@@ -216,8 +238,131 @@ void cbm_dos_close(uint8_t sa) {
     dir_active = false;
 }
 
+/*
+ * Read one raw byte from the underlying source (directory or file).
+ * Returns true if a byte was read, false if source exhausted.
+ */
+static bool comp_read_raw_byte(uint8_t *out) {
+    if (dir_active) {
+        if (dir_pos >= dir_len) return false;
+        sram_read(SRAM_DIR_BUF + dir_pos, out, 1);
+        dir_pos++;
+        return true;
+    }
+    if (channel_file.active) {
+        int rc = fat12_read(&channel_file, out, 1);
+        return (rc == 1);
+    }
+    return false;
+}
+
+/*
+ * Compressed talk: accumulate raw bytes into 256-byte blocks,
+ * compress + frame each block, then drain the frame byte-by-byte.
+ * After the last data frame, send a 2-byte EOF marker (0x0000).
+ */
+static bool cbm_dos_talk_byte_compressed(uint8_t sa, uint8_t *byte, bool *eoi) {
+    (void)sa;
+    *eoi = false;
+
+    /* Draining a framed block? */
+    if (comp_frame_pos < comp_frame_len) {
+        *byte = comp_frame_buf[comp_frame_pos++];
+        if (comp_frame_pos >= comp_frame_len && comp_eof_sent) {
+            /* Last byte of the EOF marker — signal end of transfer */
+            *eoi = true;
+        }
+        return true;
+    }
+
+    /* If we already sent the EOF marker fully, we're done */
+    if (comp_eof_sent) {
+        *eoi = true;
+        return false;
+    }
+
+    /* Source was exhausted on previous round — now send EOF marker */
+    if (!comp_filling) {
+        int eof_len = compress_proto_frame_eof(comp_frame_buf,
+                                               sizeof(comp_frame_buf));
+        if (eof_len > 0) {
+            comp_frame_len = (uint16_t)eof_len;
+        } else {
+            comp_frame_buf[0] = 0x00;
+            comp_frame_buf[1] = 0x00;
+            comp_frame_len = 2;
+        }
+        comp_frame_pos = 0;
+        comp_eof_sent = true;
+
+        *byte = comp_frame_buf[comp_frame_pos++];
+        if (comp_frame_pos >= comp_frame_len) {
+            *eoi = true;
+        }
+        return true;
+    }
+
+    /* Fill raw buffer up to 256 bytes */
+    bool source_done = false;
+    while (comp_raw_pos < 256) {
+        uint8_t b;
+        if (!comp_read_raw_byte(&b)) {
+            source_done = true;
+            break;
+        }
+        comp_raw_buf[comp_raw_pos++] = b;
+    }
+
+    if (comp_raw_pos > 0) {
+        /* Compress and frame the accumulated raw data */
+        int flen = compress_proto_frame_block(comp_raw_buf, comp_raw_pos,
+                                              comp_frame_buf, sizeof(comp_frame_buf));
+        if (flen > 0) {
+            comp_frame_len = (uint16_t)flen;
+        } else {
+            /* Compression failed — send raw data unframed as fallback */
+            memcpy(comp_frame_buf, comp_raw_buf, comp_raw_pos);
+            comp_frame_len = comp_raw_pos;
+        }
+        comp_frame_pos = 0;
+        comp_raw_pos = 0;
+
+        if (source_done) {
+            /* Source exhausted — next round will produce EOF frame */
+            comp_filling = false;
+        }
+
+        /* Return first byte of the new frame */
+        *byte = comp_frame_buf[comp_frame_pos++];
+        return true;
+    }
+
+    /* No raw data at all (empty source) — send EOF marker directly */
+    int eof_len = compress_proto_frame_eof(comp_frame_buf, sizeof(comp_frame_buf));
+    if (eof_len > 0) {
+        comp_frame_len = (uint16_t)eof_len;
+    } else {
+        comp_frame_buf[0] = 0x00;
+        comp_frame_buf[1] = 0x00;
+        comp_frame_len = 2;
+    }
+    comp_frame_pos = 0;
+    comp_filling = false;
+    comp_eof_sent = true;
+
+    *byte = comp_frame_buf[comp_frame_pos++];
+    if (comp_frame_pos >= comp_frame_len) {
+        *eoi = true;
+    }
+    return true;
+}
+
 bool cbm_dos_talk_byte(uint8_t sa, uint8_t *byte, bool *eoi) {
     *eoi = false;
+
+    if (compress_proto_enabled() && sa != IEC_SA_COMMAND) {
+        return cbm_dos_talk_byte_compressed(sa, byte, eoi);
+    }
 
     if (sa == IEC_SA_LOAD) {
         /* Directory listing */
@@ -275,6 +420,21 @@ void cbm_dos_execute_command(const char *cmd, uint8_t len) {
     /* Check for fast-load protocol commands */
     if (fastload_burst_check_command(cmd_buf, cmd_len)) return;
     if (fastload_epyx_check_command((const uint8_t *)cmd_buf, cmd_len)) return;
+
+    /* Check for compression protocol commands */
+    if (compress_proto_handle_command(cmd_buf, cmd_len)) {
+        char status_buf[8];
+        int slen = compress_proto_get_status(status_buf, sizeof(status_buf));
+        if (slen > 0) {
+            /* XZ:S was queried — respond with status */
+            iec_set_error(0, status_buf, 0, 0);
+        } else if (compress_proto_enabled()) {
+            iec_set_error(0, "OK COMPRESS ON", 0, 0);
+        } else {
+            iec_set_error(0, "OK", 0, 0);
+        }
+        return;
+    }
 
     switch (cmd_buf[0]) {
         case 'S': {
