@@ -16,7 +16,6 @@
 #include "compress_proto.h"
 #include "lz4_compress.h"
 #include <string.h>
-#include <ctype.h>
 
 static bool compression_enabled = false;
 static bool status_pending = false;
@@ -66,6 +65,9 @@ bool compress_proto_enabled(void)
 
 int compress_proto_get_status(char *buf, int buf_size)
 {
+    if (!status_pending)
+        return -1;
+
     const char *msg = compression_enabled ? "XZ:1" : "XZ:0";
     int needed = 4; /* "XZ:0" or "XZ:1" */
 

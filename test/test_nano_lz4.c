@@ -318,6 +318,15 @@ TEST(xz_reset_disables) {
     ASSERT(!compress_proto_enabled());
 }
 
+TEST(xz_get_status_without_query) {
+    /* get_status should return -1 if XZ:S was not sent */
+    compress_proto_init();
+    compress_proto_handle_command("XZ:1", 4);
+    char buf[16];
+    int n = compress_proto_get_status(buf, sizeof(buf));
+    ASSERT_EQ(n, -1);
+}
+
 /* ---- Block framing tests ---- */
 
 TEST(frame_block_header) {
@@ -395,6 +404,7 @@ int main(void) {
     RUN(xz_invalid_subcommand);
     RUN(xz_case_insensitive);
     RUN(xz_reset_disables);
+    RUN(xz_get_status_without_query);
 
     printf("\nBlock framing:\n");
     RUN(frame_block_header);

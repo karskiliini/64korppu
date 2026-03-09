@@ -9,11 +9,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#ifdef __AVR__
 #include <ctype.h>
-#else
-#include <ctype.h>
-#endif
 
 /*
  * CBM-DOS emulation for Arduino Nano.
@@ -31,8 +27,8 @@ static uint16_t dir_pos = 0;
 static bool dir_active = false;
 
 /* Compressed transfer state */
-static uint8_t  comp_raw_buf[256];
-static uint8_t  comp_frame_buf[300];
+static uint8_t  comp_raw_buf[COMPRESS_BLOCK_SIZE];
+static uint8_t  comp_frame_buf[COMPRESS_FRAME_BUF_SIZE];
 static uint16_t comp_raw_pos;
 static uint16_t comp_frame_len;
 static uint16_t comp_frame_pos;
@@ -302,9 +298,9 @@ static bool cbm_dos_talk_byte_compressed(uint8_t sa, uint8_t *byte, bool *eoi) {
         return true;
     }
 
-    /* Fill raw buffer up to 256 bytes */
+    /* Fill raw buffer up to COMPRESS_BLOCK_SIZE bytes */
     bool source_done = false;
-    while (comp_raw_pos < 256) {
+    while (comp_raw_pos < COMPRESS_BLOCK_SIZE) {
         uint8_t b;
         if (!comp_read_raw_byte(&b)) {
             source_done = true;
@@ -320,9 +316,9 @@ static bool cbm_dos_talk_byte_compressed(uint8_t sa, uint8_t *byte, bool *eoi) {
         if (flen > 0) {
             comp_frame_len = (uint16_t)flen;
         } else {
-            /* Compression failed — send raw data unframed as fallback */
-            memcpy(comp_frame_buf, comp_raw_buf, comp_raw_pos);
-            comp_frame_len = comp_raw_pos;
+            /* Compression failed — abort transfer */
+            *eoi = true;
+            return false;
         }
         comp_frame_pos = 0;
         comp_raw_pos = 0;
