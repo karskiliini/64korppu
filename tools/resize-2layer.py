@@ -86,7 +86,7 @@ def compute_layout(W, H):
     # DIN-6 IEC — left edge, below Nano area
     # Body: -8 to +8 = 16mm both ways
     j1_x = left + 10
-    j1_y = bottom - 12
+    j1_y = bottom - 14  # extra margin from H3 mounting hole at corner
     # If board is small, put DIN-6 further up
     if j1_y - 8 < nano_y + 36.5 + 2:
         j1_y = nano_y + 36.5 + 10
@@ -116,7 +116,7 @@ def compute_layout(W, H):
     # SRAM DIP-8 — below Nano, left side
     # Body: -1.5 to +9 wide, -1.5 to +9 tall
     u2_x = nano_x - 2
-    u2_y = nano_y + 38
+    u2_y = nano_y + 40  # +40 to leave 2mm gap after Nano body end (38mm)
     if u2_y + 9 > bottom - 5:
         u2_y = bottom - 14
     positions['U2'] = (u2_x, u2_y, 0)
@@ -129,16 +129,17 @@ def compute_layout(W, H):
         u3_y = bottom - 25
     positions['U3'] = (u3_x, u3_y, 0)
 
-    # LED + resistor
-    d1_x = left + 6
-    d1_y = bottom - 5
+    # LED + resistor — near barrel jack, top area
+    # Avoid bottom where J1 and H3 can collide
+    d1_x = j3_x + 25
+    d1_y = top + 7
     r8_x = d1_x + 6
     r8_y = d1_y
     positions['D1'] = (d1_x, d1_y, 0)
     positions['R8'] = (r8_x, r8_y, 0)
 
-    # Bypass caps near ICs
-    c1_x = u2_x + 12
+    # Bypass caps near ICs (avoid placing C1 near U3)
+    c1_x = u2_x - 10  # left of U2 with clearance
     c1_y = u2_y + 2
     c2_x = u3_x + 12
     c2_y = u3_y + 2
@@ -245,9 +246,10 @@ def main():
     print(f"Set board outline: {W}x{H}mm")
 
     # 5. Move mounting hole refs to F.Fab to avoid silk_over_copper DRC
+    #    Keep TP refs on B.SilkS (correct for B.Cu components)
     for fp in board.GetFootprints():
         ref = fp.GetReference()
-        if ref.startswith('H') or ref.startswith('TP'):
+        if ref.startswith('H'):
             fp.Reference().SetLayer(pcbnew.F_Fab)
 
     # 6. Add GND zone on B.Cu
