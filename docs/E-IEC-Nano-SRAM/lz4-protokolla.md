@@ -113,17 +113,17 @@ lähetetään lohkoissa normaalin tavuvirran sijaan.
 | Kenttä | Koko | Arvoalue | Kuvaus |
 |--------|------|----------|--------|
 | compressed_size | 2B LE | 0–512 | 0 = EOF, 1–512 = pakattu koko |
-| raw_size | 2B LE | 1–128 | Puretun datan koko (COMPRESS_BLOCK_SIZE) |
+| raw_size | 2B LE | 1–512 | Puretun datan koko (COMPRESS_BLOCK_SIZE) |
 | payload | N tavua | — | LZ4 block -formaatti |
 
 ### Esimerkkisiirto
 
 ```
 Nano lähettää (40 KB tiedosto):
-  [0x82, 0x00, 0x00, 0x01, <130 tavua LZ4>]    ← lohko 1: 130B pakattu → 256B
-  [0x90, 0x00, 0x00, 0x01, <144 tavua LZ4>]    ← lohko 2: 144B pakattu → 256B
+  [0x00, 0x01, 0x00, 0x02, <256 tavua LZ4>]    ← lohko 1: 256B pakattu → 512B
+  [0x10, 0x01, 0x00, 0x02, <272 tavua LZ4>]    ← lohko 2: 272B pakattu → 512B
   ...
-  [0x50, 0x00, 0x80, 0x00, <80 tavua LZ4>]     ← viimeinen: 80B → 128B
+  [0x80, 0x00, 0x00, 0x02, <128 tavua LZ4>]    ← viimeinen: 128B → 512B
   [0x00, 0x00]                                   ← EOF
 
 C64 vastaanottaa:
@@ -185,7 +185,7 @@ Tämä on standardi LZ4, joten mikä tahansa LZ4-purkaja toimii.
 | JiffyDOS ROM | 64korppu | 2-bit | Ei | ~5 KB/s |
 | JiffyDOS ROM | JiffyDOS 1541 | 2-bit | Ei | ~5 KB/s |
 | EPYX cartridge | 64korppu | EPYX | Ei | ~3 KB/s |
-| **karskiROM** | **64korppu** | **2-bit + LZ4** | **Kyllä** | **~9 KB/s** |
+| **karskiROM** | **64korppu** | **2-bit + LZ4** | **Kyllä** | **~10 KB/s** |
 | karskiROM | Normaali 1541 | Std IEC | Ei | ~0.4 KB/s |
 | karskiROM | JiffyDOS 1541 | 2-bit | Ei | ~5 KB/s |
 
@@ -200,9 +200,9 @@ Tämä on standardi LZ4, joten mikä tahansa LZ4-purkaja toimii.
 
 | Datatyyppi | Pakkaussuhde | JiffyDOS + LZ4 |
 |------------|-------------|-----------------|
-| BASIC-ohjelma | ~2.0:1 | ~10 KB/s |
-| Konetason peli | ~1.5:1 | ~7.5 KB/s |
-| Sprite/grafiikka | ~2.5:1 | ~12.5 KB/s |
-| Hakemistolistaus | ~3.0:1 | ~15 KB/s |
+| BASIC-ohjelma | ~2.2:1 | ~11 KB/s |
+| Konetason peli | ~1.6:1 | ~8 KB/s |
+| Sprite/grafiikka | ~2.8:1 | ~14 KB/s |
+| Hakemistolistaus | ~3.5:1 | ~17 KB/s |
 | Jo pakattu data | ~1.05:1 | ~5.2 KB/s |
-| **Keskimäärin** | **~1.8:1** | **~9 KB/s** |
+| **Keskimäärin** | **~2.0:1** | **~10 KB/s** |

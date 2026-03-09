@@ -6,12 +6,12 @@
 
 /*
  * Hardware configuration for Alternative E:
- * Arduino Nano (ATmega328P) + 23LC256 SPI SRAM + 74HC595 shift register
+ * Arduino Nano (ATmega328P) + 23LC512 SPI SRAM + 74HC595 shift register
  */
 
-/* --- SRAM Memory Map (23LC256, 32KB) --- */
+/* --- SRAM Memory Map (23LC512, 64KB) --- */
 
-#define SRAM_SIZE           0x8000UL    /* 32768 bytes */
+#define SRAM_SIZE           0x10000UL   /* 65536 bytes */
 
 #define SRAM_MFM_TRACK      0x00000UL   /* MFM raw track buffer */
 #define SRAM_MFM_TRACK_SIZE 12496
@@ -28,6 +28,13 @@
 
 #define SRAM_IEC_BUF        0x056D0UL   /* IEC channel buffer */
 #define SRAM_IEC_BUF_SIZE   512
+
+/* LZ4 compression buffers (in external SRAM, not internal RAM) */
+#define SRAM_COMP_RAW       0x058D0UL   /* Raw data before compression */
+#define SRAM_COMP_RAW_SIZE  512         /* = COMPRESS_BLOCK_SIZE */
+#define SRAM_COMP_FRAME     0x05AD0UL   /* Framed LZ4 output */
+#define SRAM_COMP_FRAME_SIZE 556        /* = COMPRESS_FRAME_BUF_SIZE */
+                                        /* Vapaa: 0x05D0C - 0x0FFFF = ~41.2 KB */
 
 /* --- Floppy Geometry --- */
 
@@ -168,8 +175,12 @@
  *   128B     128B       172B       256B (128×2)   556B      ~1.5:1
  *   256B     256B       300B       512B (256×2)  1068B      ~1.8:1
  *
- * ATmega328P:ssa 2KB RAM — 128B on turvallinen valinta.
- * Suurempaa voi kokeilla jos RAM riittää (tarkista avr-size:lla).
+ * 23LC512:n 64KB SRAM:issa raakadata- ja kehyspuskurit ovat
+ * ulkoisessa muistissa (SRAM_COMP_RAW / SRAM_COMP_FRAME).
+ * Hash-taulu (COMPRESS_HASH_SIZE × 2 tavua) on pinossa
+ * kompression aikana: 256 × 2 = 512 tavua.
+ *
+ * 512B lohkokoko = FAT12-sektorikoko → suoraviivainen pipeline.
  *
  * COMPRESS_HASH_SIZE pitää olla sama kuin COMPRESS_BLOCK_SIZE
  * (hash-taulun koko = lohkokoko entryjä × 2 tavua pinossa).
@@ -177,8 +188,8 @@
  * COMPRESS_FRAME_BUF_SIZE = 4 (header) + BLOCK_SIZE + BLOCK_SIZE/255 + 16
  * (worst case: ei-pakattava data + LZ4 token overhead).
  */
-#define COMPRESS_BLOCK_SIZE     128
-#define COMPRESS_HASH_SIZE      128
-#define COMPRESS_FRAME_BUF_SIZE 172
+#define COMPRESS_BLOCK_SIZE     512
+#define COMPRESS_HASH_SIZE      256
+#define COMPRESS_FRAME_BUF_SIZE 556
 
 #endif /* CONFIG_H */

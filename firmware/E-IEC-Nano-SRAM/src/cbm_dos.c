@@ -26,9 +26,13 @@ static uint16_t dir_len = 0;
 static uint16_t dir_pos = 0;
 static bool dir_active = false;
 
-/* Compressed transfer state */
-static uint8_t  comp_raw_buf[COMPRESS_BLOCK_SIZE];
-static uint8_t  comp_frame_buf[COMPRESS_FRAME_BUF_SIZE];
+/*
+ * Compressed transfer state.
+ * Raw and frame buffers are in external SRAM (SRAM_COMP_RAW / SRAM_COMP_FRAME),
+ * not in internal RAM. Only the state variables live here (~8 bytes).
+ * During compression, lz4_compress_block allocates the hash table on the stack
+ * (COMPRESS_HASH_SIZE × 2 = 512 bytes, temporarily).
+ */
 static uint16_t comp_raw_pos;
 static uint16_t comp_frame_len;
 static uint16_t comp_frame_pos;
@@ -253,19 +257,39 @@ static bool comp_read_raw_byte(uint8_t *out) {
 }
 
 /*
- * Compressed talk: accumulate raw bytes into 256-byte blocks,
- * compress + frame each block, then drain the frame byte-by-byte.
+ * Compress raw data from SRAM_COMP_RAW and write framed output to SRAM_COMP_FRAME.
+ * Uses stack-allocated temporary buffers (~1068 bytes) only during this call.
+ * Returns frame length, or -1 on failure.
+ */
+static int compress_block_via_sram(uint16_t raw_len) {
+    uint8_t raw[COMPRESS_BLOCK_SIZE];
+    uint8_t frame[COMPRESS_FRAME_BUF_SIZE];
+
+    sram_read(SRAM_COMP_RAW, raw, raw_len);
+    int flen = compress_proto_frame_block(raw, raw_len, frame, sizeof(frame));
+    if (flen > 0) {
+        sram_write(SRAM_COMP_FRAME, frame, (uint16_t)flen);
+    }
+    return flen;
+}
+
+/*
+ * Compressed talk: accumulate raw bytes into SRAM_COMP_RAW (512-byte blocks),
+ * compress + frame each block to SRAM_COMP_FRAME, then drain byte-by-byte.
  * After the last data frame, send a 2-byte EOF marker (0x0000).
+ *
+ * Buffers are in external SRAM — only state variables use internal RAM.
+ * During the compress call, ~1068 bytes of stack are used temporarily.
  */
 static bool cbm_dos_talk_byte_compressed(uint8_t sa, uint8_t *byte, bool *eoi) {
     (void)sa;
     *eoi = false;
 
-    /* Draining a framed block? */
+    /* Draining a framed block from SRAM? */
     if (comp_frame_pos < comp_frame_len) {
-        *byte = comp_frame_buf[comp_frame_pos++];
+        *byte = sram_read_byte(SRAM_COMP_FRAME + comp_frame_pos);
+        comp_frame_pos++;
         if (comp_frame_pos >= comp_frame_len && comp_eof_sent) {
-            /* Last byte of the EOF marker — signal end of transfer */
             *eoi = true;
         }
         return true;
@@ -279,26 +303,21 @@ static bool cbm_dos_talk_byte_compressed(uint8_t sa, uint8_t *byte, bool *eoi) {
 
     /* Source was exhausted on previous round — now send EOF marker */
     if (!comp_filling) {
-        int eof_len = compress_proto_frame_eof(comp_frame_buf,
-                                               sizeof(comp_frame_buf));
-        if (eof_len > 0) {
-            comp_frame_len = (uint16_t)eof_len;
-        } else {
-            comp_frame_buf[0] = 0x00;
-            comp_frame_buf[1] = 0x00;
-            comp_frame_len = 2;
-        }
+        uint8_t eof[2] = {0x00, 0x00};
+        sram_write(SRAM_COMP_FRAME, eof, 2);
+        comp_frame_len = 2;
         comp_frame_pos = 0;
         comp_eof_sent = true;
 
-        *byte = comp_frame_buf[comp_frame_pos++];
+        *byte = sram_read_byte(SRAM_COMP_FRAME);
+        comp_frame_pos = 1;
         if (comp_frame_pos >= comp_frame_len) {
             *eoi = true;
         }
         return true;
     }
 
-    /* Fill raw buffer up to COMPRESS_BLOCK_SIZE bytes */
+    /* Fill raw buffer in SRAM up to COMPRESS_BLOCK_SIZE bytes */
     bool source_done = false;
     while (comp_raw_pos < COMPRESS_BLOCK_SIZE) {
         uint8_t b;
@@ -306,13 +325,13 @@ static bool cbm_dos_talk_byte_compressed(uint8_t sa, uint8_t *byte, bool *eoi) {
             source_done = true;
             break;
         }
-        comp_raw_buf[comp_raw_pos++] = b;
+        sram_write_byte(SRAM_COMP_RAW + comp_raw_pos, b);
+        comp_raw_pos++;
     }
 
     if (comp_raw_pos > 0) {
-        /* Compress and frame the accumulated raw data */
-        int flen = compress_proto_frame_block(comp_raw_buf, comp_raw_pos,
-                                              comp_frame_buf, sizeof(comp_frame_buf));
+        /* Compress from SRAM_COMP_RAW → SRAM_COMP_FRAME */
+        int flen = compress_block_via_sram(comp_raw_pos);
         if (flen > 0) {
             comp_frame_len = (uint16_t)flen;
         } else {
@@ -324,29 +343,24 @@ static bool cbm_dos_talk_byte_compressed(uint8_t sa, uint8_t *byte, bool *eoi) {
         comp_raw_pos = 0;
 
         if (source_done) {
-            /* Source exhausted — next round will produce EOF frame */
             comp_filling = false;
         }
 
-        /* Return first byte of the new frame */
-        *byte = comp_frame_buf[comp_frame_pos++];
+        *byte = sram_read_byte(SRAM_COMP_FRAME);
+        comp_frame_pos = 1;
         return true;
     }
 
     /* No raw data at all (empty source) — send EOF marker directly */
-    int eof_len = compress_proto_frame_eof(comp_frame_buf, sizeof(comp_frame_buf));
-    if (eof_len > 0) {
-        comp_frame_len = (uint16_t)eof_len;
-    } else {
-        comp_frame_buf[0] = 0x00;
-        comp_frame_buf[1] = 0x00;
-        comp_frame_len = 2;
-    }
+    uint8_t eof[2] = {0x00, 0x00};
+    sram_write(SRAM_COMP_FRAME, eof, 2);
+    comp_frame_len = 2;
     comp_frame_pos = 0;
     comp_filling = false;
     comp_eof_sent = true;
 
-    *byte = comp_frame_buf[comp_frame_pos++];
+    *byte = sram_read_byte(SRAM_COMP_FRAME);
+    comp_frame_pos = 1;
     if (comp_frame_pos >= comp_frame_len) {
         *eoi = true;
     }

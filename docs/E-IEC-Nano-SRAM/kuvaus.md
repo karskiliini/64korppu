@@ -7,7 +7,7 @@ C64 ──[IEC-sarjaväylä]──> Arduino Nano ──[34-pin]──> PC 3.5" H
                                 │
                            [SPI-väylä]
                                 │
-                          SRAM (32KB)
+                          SRAM (64KB)
 ```
 
 ## Motivaatio
@@ -22,21 +22,22 @@ Picon monimutkaisuutta, ja säilytetään Nanon 5V-etu (ei tasonmuuntimia).
 
 ## SRAM-vaihtoehdot
 
-### Vaihtoehto 1: 23LC256 SPI SRAM (Valittu)
+### Vaihtoehto 1: 23LC512 SPI SRAM (Valittu)
 
 | Ominaisuus | Arvo |
 |---|---|
 | Valmistaja | Microchip |
-| Kapasiteetti | 32 KB (256 Kbit) |
+| Kapasiteetti | 64 KB (512 Kbit) |
 | Liitäntä | SPI (20 MHz max) |
 | Käyttöjännite | 1.8V - 5.5V (**5V yhteensopiva!**) |
 | Pinnit | 8 (DIP-8 / SOIC-8) |
-| Hinta | ~1€ (uusi, Mouser/Digikey/eBay) |
+| Hinta | ~1.5€ (uusi, Mouser/Digikey/eBay) |
 | Arduino-pinnit | 4 kpl (MOSI, MISO, SCK, /CS) |
 | Osoiteleveys | 16-bit (vs. 23LC1024:n 24-bit) |
 
-**Miksi tämä:** Todellinen muistinkäyttö on ~22 KB, joten 32 KB riittää.
-Sama DIP-8 pinout ja SPI-komennot kuin 23LC1024. Halvempi ja helposti saatavilla.
+**Miksi tämä:** LZ4-pakkauksen puskurit (~1 KB) mahtuvat ulkoiseen SRAM:iin,
+vapauttaen ATmega328P:n 2 KB sisäisen RAM:in pinolle ja muuttujille.
+Sama DIP-8 pinout ja SPI-komennot kuin 23LC256/23LC1024. Drop-in vaihto.
 
 ### Vaihtoehto 3: 62256 Parallel SRAM (vanhoista laitteista)
 
@@ -64,7 +65,7 @@ SPI-liitäntä on ylivoimainen Nano-projektissa:
 - 32 KB riittää (todellinen käyttö ~22 KB)
 - 5V natiivi
 
-## Muistikartta (23LC256, 32 KB)
+## Muistikartta (23LC512, 64 KB)
 
 ```
 SRAM-osoite    Käyttö                    Koko
@@ -75,7 +76,9 @@ SRAM-osoite    Käyttö                    Koko
 0x044D0-0x046CF  Sektoripuskuri #2         512 B
 0x046D0-0x056CF  Hakemistopuskuri          4 KB
 0x056D0-0x058CF  IEC-kanavan puskuri       512 B
-0x058D0-0x07FFF  Vapaa (~10 KB)            käytettävissä
+0x058D0-0x05ACF  LZ4 raakadata-puskuri     512 B
+0x05AD0-0x05D0B  LZ4 kehyspuskuri          556 B
+0x05D0C-0x0FFFF  Vapaa (~41.2 KB)          käytettävissä
 ───────────────────────────────────────────────────
 ```
 
@@ -84,6 +87,7 @@ Nanon sisäinen 2 KB RAM käytetään:
 - SPI-siirtopuskurille (~256 B)
 - IEC-tilakoneelle (~256 B)
 - MFM-dekoodauksen välipuskurille (~512 B)
+- LZ4-pakkauksen aikana: hash-taulu pinossa (~512 B, väliaikainen)
 - Loppuosa vapaana
 
 ## Komponenttilista
@@ -91,7 +95,7 @@ Nanon sisäinen 2 KB RAM käytetään:
 | Komponentti | Kuvaus | Hinta (arvio) |
 |---|---|---|
 | Arduino Nano (klooni) | ATmega328P, 16 MHz, 5V | ~3-5€ |
-| 23LC256 | 32KB SPI SRAM, DIP-8 | ~1€ |
+| 23LC512 | 64KB SPI SRAM, DIP-8 | ~1.5€ |
 | 6-pin DIN -liitin | IEC-väylä C64:lle | ~2€ |
 | 34-pin IDC -liitin | PC-floppy | ~1€ |
 | 4-pin Berg liitin | Virta floppy-asemalle | ~1€ |
@@ -205,7 +209,7 @@ Vapaat:
 ```
 ┌──────────────────────────────────────┐
 │        Arduino Nano Firmware         │
-│        + 23LC256 SRAM               │
+│        + 23LC512 SRAM               │
 ├──────────────────────────────────────┤
 │  SPI SRAM -ajuri                     │
 │  (sram_read, sram_write, sram_seq)   │
@@ -228,7 +232,7 @@ Vapaat:
 
 RAM-käyttö:
   Nano 2KB:  pino, SPI-puskuri, tilakone, välimuuttujat
-  SRAM 32KB: raitapuskuri, FAT-cache, sektorit, hakemisto
+  SRAM 64KB: raitapuskuri, FAT-cache, sektorit, hakemisto, LZ4-puskurit
 ```
 
 ### SPI SRAM -käyttö (23LC256)
@@ -318,7 +322,7 @@ Vaihtoehto E (SRAM:lla):
 ┌──────────────────┬───────────────┬───────────────┬───────────────┐
 │ Ominaisuus       │ D: Nano       │ E: Nano+SRAM  │ A: Pico       │
 ├──────────────────┼───────────────┼───────────────┼───────────────┤
-│ RAM              │ 2 KB (!)      │ 2+32 KB       │ 264 KB        │
+│ RAM              │ 2 KB (!)      │ 2+64 KB       │ 264 KB        │
 │ Tasonmuuntimet   │ 0 kpl         │ 0 kpl         │ 4x BSS138     │
 │ Komponentteja    │ 7             │ 9 (+SRAM,595) │ 12            │
 │ Hinta            │ ~8€           │ ~10-13€       │ ~12€          │

@@ -56,7 +56,7 @@
     ATN ──┘     CLK ──┘    DATA ──┘
 ```
 
-## 23LC256 SPI SRAM (32 KB)
+## 23LC512 SPI SRAM (64 KB)
 
 ```
                     +5V
@@ -65,7 +65,7 @@
                      │          mahdollisimman lähelle
                     GND         piirin VCC/GND-pinnejä)
 
-                23LC256
+                23LC512
                ┌────┬────┐
     D10 ───────┤1 /CS  VCC├───── +5V
                │         8│
@@ -169,7 +169,7 @@
         └──────────────┘  │   │      │   │   │
                           │   │      │   │   │
                      ┌────┴───┴──┐ ┌─┴───┴───┴──┐
-                     │ 23LC256  │ │  74HC595    │
+                     │ 23LC512  │ │  74HC595    │
                      │           │ │             │
                      │ /CS ← D10│ │ SER ← MOSI  │
                      │ SI ← MOSI│ │ SRCLK ← SCK │
@@ -269,7 +269,7 @@
     D7:      /WDATA (suora GPIO, MFM-kirjoitus)
     D8:      /RDATA (ICP1, MFM-luku Timer1 Input Capture)
     D9:      Vapaa
-    D10:     23LC256 /CS
+    D10:     23LC512 /CS
     D11-D13: SPI (MOSI, MISO, SCK) → SRAM + 595
     A0-A2:   Floppy input (/TRK00, /WPT, /DSKCHG)
     A3-A4:   Vapaat
@@ -284,14 +284,14 @@
     │          │
     │ +5V ─────┼──┬───── Arduino Nano +5V (pin 27)
     │          │  │
-    │          │  ├───── 23LC256 VCC (pin 8)
+    │          │  ├───── 23LC512 VCC (pin 8)
     │          │  │
     │          │  ├───── 74HC595 VCC (pin 16)
     │          │  │
     │          │  └───── Floppy-asema +5V
     │          │
     │ GND ─────┼──┬───── Arduino Nano GND
-    │          │  ├───── 23LC256 VSS (pin 4)
+    │          │  ├───── 23LC512 VSS (pin 4)
     │          │  ├───── 74HC595 GND (pin 8)
     │          │  └───── Floppy-asema GND
     └──────────┘
@@ -305,9 +305,9 @@
   │      │                                                   │ PC 3.5"   │
   │ IEC  │      Arduino Nano                                  │ HD 1.44MB │
   │ port │     ┌────────────────┐                             │           │
-  │      │     │   ATmega328P   │     23LC256      74HC595   │  34-pin   │
+  │      │     │   ATmega328P   │     23LC512      74HC595   │  34-pin   │
   │      │     │                │    ┌────────┐   ┌────────┐  │  IDC      │
-  │      │ 1kΩ │                │    │ 32KB   │   │ 8-bit  │  │           │
+  │      │ 1kΩ │                │    │ 64KB   │   │ 8-bit  │  │           │
   │ ATN  ├─┤├──┤ D2 (INT0)     │    │ SPI    │   │ shift  │  │           │
   │ CLK  ├─┤├──┤ D3            │    │ SRAM   │   │ reg    │  │           │
   │ DATA ├─┤├──┤ D4            │    │        │   │        │  │           │
@@ -369,7 +369,7 @@
     +5V ──┤├── GND   (Arduino Nano, lähellä +5V/GND pinnejä)
           100nF
 
-    +5V ──┤├── GND   (23LC256, pin 8 ja pin 4 väliin)
+    +5V ──┤├── GND   (23LC512, pin 8 ja pin 4 väliin)
           100nF
 
     +5V ──┤├── GND   (74HC595, pin 16 ja pin 8 väliin)
@@ -385,7 +385,7 @@
   Nro  Komponentti            Paketti       Kpl   Huomio
   ───  ─────────────────────  ────────────  ───   ────────────────────────
    1   Arduino Nano (klooni)  DIP-moduuli    1   ATmega328P, 16MHz, 5V
-   2   23LC256               DIP-8          1   32KB SPI SRAM, 5V
+   2   23LC512               DIP-8          1   64KB SPI SRAM, 5V
    3   74HC595                DIP-16         1   8-bit shift register
    4   Vastus 1kΩ             1/4W           4   IEC-suojavastukset
    5   Vastus 4.7kΩ           1/4W           3   IEC pull-up (valinnainen)
