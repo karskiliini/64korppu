@@ -156,4 +156,9 @@
 #define MFM_CRC_INIT    0xFFFF
 #define MFM_CRC_POLY    0x1021
 
+/* --- LZ4 Compression --- */
+
+#define COMPRESS_BLOCK_SIZE     256     /* Raw bytes per compression block */
+#define COMPRESS_FRAME_BUF_SIZE 300     /* Max framed block (header + LZ4) */
+
 #endif /* CONFIG_H */

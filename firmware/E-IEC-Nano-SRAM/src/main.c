@@ -17,6 +17,7 @@
 #include "fastload_jiffydos.h"
 #include "fastload_burst.h"
 #include "fastload_epyx.h"
+#include "compress_proto.h"
 
 /*
  * 64korppu — Alternative E: Arduino Nano + 23LC256 SPI SRAM
@@ -121,6 +122,10 @@ int main(void) {
     fastload_burst_register();
     fastload_epyx_register();
     uart_puts("Fastload OK\r\n");
+
+    /* Initialize compression protocol */
+    compress_proto_init();
+    uart_puts("Compress OK\r\n");
 
     /* Enable interrupts */
     sei();
