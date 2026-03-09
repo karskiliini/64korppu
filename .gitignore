@@ -14,6 +14,7 @@ cmake_install.cmake
 Makefile
 !test/Makefile
 !firmware/*/Makefile
+!tools/sim/Makefile
 compile_commands.json
 test/test_d64
 test/test_cbmfs

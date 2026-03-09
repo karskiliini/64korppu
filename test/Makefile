@@ -8,7 +8,7 @@ NANO_SRC = ../firmware/E-IEC-Nano-SRAM/src
 
 .PHONY: all test clean
 
-all: test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload vice/iec_bridge
+all: test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload test_nano_shiftreg vice/iec_bridge
 
 # Unit tests for D64 module
 test_d64: test_d64.c mock_fat12.c $(FIRMWARE_SRC)/d64.c
@@ -34,12 +34,16 @@ FASTLOAD_SRC = ../firmware/E-IEC-Nano-SRAM/src/fastload.c \
 test_nano_fastload: test_nano_fastload.c $(FASTLOAD_SRC)
 	$(CC) $(CFLAGS) $(NANO_INCLUDES) -o $@ $^
 
+# Unit tests for 74HC595 shift register bit mapping
+test_nano_shiftreg: test_nano_shiftreg.c
+	$(CC) $(CFLAGS) $(NANO_INCLUDES) -o $@ $^
+
 # VICE IEC bridge (host build of CBM-DOS + D64)
 vice/iec_bridge: vice/iec_bridge.c vice/mock_iec.c mock_fat12.c \
                   $(FIRMWARE_SRC)/d64.c $(FIRMWARE_SRC)/cbm_dos.c
 	$(CC) $(CFLAGS) $(INCLUDES) -Ivice -o $@ $^
 
-test: test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload
+test: test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload test_nano_shiftreg
 	@echo "=== Running D64 tests ==="
 	./test_d64
 	@echo ""
@@ -54,6 +58,9 @@ test: test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload
 	@echo ""
 	@echo "=== Running Nano Fastload tests ==="
 	./test_nano_fastload
+	@echo ""
+	@echo "=== Running Nano 74HC595 tests ==="
+	./test_nano_shiftreg
 
 clean:
 	rm -f test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload vice/iec_bridge
