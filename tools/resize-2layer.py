@@ -351,7 +351,7 @@ def main():
             fp.Reference().SetLayer(pcbnew.F_Fab)
 
     # 6. Add/update board label on F.SilkS
-    BOARD_LABEL = "karski by\ndesign 2026\nrev 001"
+    BOARD_LABEL = "C64 HD Floppy Controller\nkarski by\ndesign 2026\nrev 001"
     # Remove existing board label if present
     for d in list(board.GetDrawings()):
         if hasattr(d, 'GetText') and d.GetText() == BOARD_LABEL:

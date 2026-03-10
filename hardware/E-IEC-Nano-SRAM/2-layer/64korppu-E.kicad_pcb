@@ -3582,7 +3582,7 @@
 		(layer "Edge.Cuts")
 		(uuid "457c0a92-7bc1-4fc4-859c-50bbd995f16d")
 	)
-	(gr_text "karski by\ndesign 2026\nrev 001"
+	(gr_text "C64 HD Floppy Controller\nkarski by\ndesign 2026\nrev 001"
 		(at 165 163 0)
 		(layer "F.SilkS")
 		(uuid "e54ae0eb-1389-4cd7-b4da-ad7632efa5e8")
