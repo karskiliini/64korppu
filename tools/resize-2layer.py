@@ -350,7 +350,7 @@ def main():
         if ref.startswith('H'):
             fp.Reference().SetLayer(pcbnew.F_Fab)
 
-    # 6. Add/update board label on F.Cu
+    # 6. Add/update board label on F.SilkS
     BOARD_LABEL = "karski by\ndesign 2026\nrev 001"
     # Remove existing board label if present
     for d in list(board.GetDrawings()):
@@ -358,7 +358,7 @@ def main():
             board.Remove(d)
     label = pcbnew.PCB_TEXT(board)
     label.SetText(BOARD_LABEL)
-    label.SetLayer(pcbnew.F_Cu)
+    label.SetLayer(pcbnew.F_SilkS)
     label.SetPosition(pcbnew.VECTOR2I(
         pcbnew.FromMM(100 + 18), pcbnew.FromMM(100 + 13.5)))
     label.SetTextSize(pcbnew.VECTOR2I(pcbnew.FromMM(1.5), pcbnew.FromMM(1.5)))

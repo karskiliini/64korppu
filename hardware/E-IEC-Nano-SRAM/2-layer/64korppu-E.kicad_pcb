@@ -3584,7 +3584,7 @@
 	)
 	(gr_text "karski by\ndesign 2026\nrev 001"
 		(at 165 163 0)
-		(layer "F.Cu")
+		(layer "F.SilkS")
 		(uuid "e54ae0eb-1389-4cd7-b4da-ad7632efa5e8")
 		(effects
 			(font
