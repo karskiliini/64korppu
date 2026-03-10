@@ -203,12 +203,14 @@ def compute_layout(W, H):
 
 
 def clamp_texts_to_board(board, left, top, right, bottom, margin=2):
-    """Ensure all footprint texts (Reference, Value) stay within board area.
+    """Ensure all texts (footprint refs/values + standalone) stay within board area.
 
-    If a text is outside the board, flip its offset to the opposite side
-    of the footprint. If still outside, clamp to the nearest edge.
+    For footprint texts: flip offset to opposite side, then clamp.
+    For standalone PCB_TEXT: clamp directly to nearest edge.
     """
     fixed = 0
+
+    # Footprint texts (Reference, Value)
     for fp in board.GetFootprints():
         fp_pos = fp.GetPosition()
         fp_x = pcbnew.ToMM(fp_pos.x)
@@ -219,7 +221,6 @@ def clamp_texts_to_board(board, left, top, right, bottom, margin=2):
             tx = pcbnew.ToMM(pos.x)
             ty = pcbnew.ToMM(pos.y)
 
-            # Offset from footprint origin
             dx = tx - fp_x
             dy = ty - fp_y
 
@@ -243,6 +244,21 @@ def clamp_texts_to_board(board, left, top, right, bottom, margin=2):
                 text_item.SetPosition(pcbnew.VECTOR2I(
                     pcbnew.FromMM(new_x), pcbnew.FromMM(new_y)))
                 fixed += 1
+
+    # Standalone PCB_TEXT items (board labels etc.)
+    for d in board.GetDrawings():
+        if not hasattr(d, 'GetText'):
+            continue
+        pos = d.GetPosition()
+        tx = pcbnew.ToMM(pos.x)
+        ty = pcbnew.ToMM(pos.y)
+        if tx < left + margin or tx > right - margin or \
+           ty < top + margin or ty > bottom - margin:
+            new_x = max(left + margin, min(right - margin, tx))
+            new_y = max(top + margin, min(bottom - margin, ty))
+            d.SetPosition(pcbnew.VECTOR2I(
+                pcbnew.FromMM(new_x), pcbnew.FromMM(new_y)))
+            fixed += 1
 
     return fixed
 
@@ -334,16 +350,35 @@ def main():
         if ref.startswith('H'):
             fp.Reference().SetLayer(pcbnew.F_Fab)
 
-    # 6. Clamp all texts inside board area
+    # 6. Add/update board label on F.Cu
+    BOARD_LABEL = "karski by\ndesign 2026\nrev 001"
+    # Remove existing board label if present
+    for d in list(board.GetDrawings()):
+        if hasattr(d, 'GetText') and d.GetText() == BOARD_LABEL:
+            board.Remove(d)
+    label = pcbnew.PCB_TEXT(board)
+    label.SetText(BOARD_LABEL)
+    label.SetLayer(pcbnew.F_Cu)
+    label.SetPosition(pcbnew.VECTOR2I(
+        pcbnew.FromMM(100 + 18), pcbnew.FromMM(100 + 13.5)))
+    label.SetTextSize(pcbnew.VECTOR2I(pcbnew.FromMM(1.5), pcbnew.FromMM(1.5)))
+    label.SetTextThickness(pcbnew.FromMM(0.3))
+    label.SetBold(True)
+    label.SetHorizJustify(pcbnew.GR_TEXT_H_ALIGN_LEFT)
+    label.SetVertJustify(pcbnew.GR_TEXT_V_ALIGN_BOTTOM)
+    board.Add(label)
+    print(f"Added board label on F.Cu")
+
+    # 7. Clamp all texts inside board area
     fixed = clamp_texts_to_board(board, 100, 100, 100 + W, 100 + H)
     if fixed:
         print(f"Fixed {fixed} texts outside board area")
 
-    # 7. Add GND zone on B.Cu
+    # 8. Add GND zone on B.Cu
     add_zone(board, 1, pcbnew.B_Cu, 100, 100, 100 + W, 100 + H)
     print("Added GND zone on B.Cu")
 
-    # 8. Save
+    # 9. Save
     board.Save(PCB_PATH)
     print(f"\nSaved {W}x{H}mm 2-layer PCB: {PCB_PATH}")
 

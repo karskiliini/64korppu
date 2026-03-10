@@ -3584,6 +3584,19 @@
 		(layer "Edge.Cuts")
 		(uuid "8e40809c-cd4a-4621-b8e0-974359b71439")
 	)
+	(gr_text "karski by\ndesign 2026\nrev 001"
+		(at 118 113.5 0)
+		(layer "F.Cu")
+		(uuid "0f1dbf6a-78c4-40df-bb2a-4bd754ec16b2")
+		(effects
+			(font
+				(size 1.5 1.5)
+				(thickness 0.3)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+	)
 	(via
 		(at 101.13 109.9327)
 		(size 0.6)
