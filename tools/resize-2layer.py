@@ -351,23 +351,23 @@ def main():
             fp.Reference().SetLayer(pcbnew.F_Fab)
 
     # 6. Add/update board label on F.SilkS
-    BOARD_LABEL = "C64 HD Floppy Controller\nkarski by\ndesign 2026\nrev 001"
+    BOARD_LABEL = "C64 HD Floppy Controller\nkarski by design 2026\nrev 001"
     # Remove existing board label if present
     for d in list(board.GetDrawings()):
-        if hasattr(d, 'GetText') and d.GetText() == BOARD_LABEL:
+        if hasattr(d, 'GetText') and 'karski by' in d.GetText():
             board.Remove(d)
     label = pcbnew.PCB_TEXT(board)
     label.SetText(BOARD_LABEL)
     label.SetLayer(pcbnew.F_SilkS)
     label.SetPosition(pcbnew.VECTOR2I(
-        pcbnew.FromMM(100 + 18), pcbnew.FromMM(100 + 13.5)))
+        pcbnew.FromMM(100 + W - 6.5), pcbnew.FromMM(100 + H - 6)))
     label.SetTextSize(pcbnew.VECTOR2I(pcbnew.FromMM(1.5), pcbnew.FromMM(1.5)))
     label.SetTextThickness(pcbnew.FromMM(0.3))
     label.SetBold(True)
-    label.SetHorizJustify(pcbnew.GR_TEXT_H_ALIGN_LEFT)
+    label.SetHorizJustify(pcbnew.GR_TEXT_H_ALIGN_RIGHT)
     label.SetVertJustify(pcbnew.GR_TEXT_V_ALIGN_BOTTOM)
     board.Add(label)
-    print(f"Added board label on F.Cu")
+    print(f"Added board label on F.SilkS")
 
     # 7. Clamp all texts inside board area
     fixed = clamp_texts_to_board(board, 100, 100, 100 + W, 100 + H)
