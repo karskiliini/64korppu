@@ -155,14 +155,18 @@ def compute_layout(W, H):
     positions['R8'] = (r8_x, r8_y, 0)
 
     # Bypass caps near ICs
-    # C1: SRAM bypass — left of U2, with clearance from J1
-    c1_x = max(u2_x - 10, j1_x + 8 + 2)  # clear of J1 body right edge
-    c1_y = u2_y + 2
-    # If C1 collides with U3, move between U2 and J1
-    u3_body = (u3_x - 1.5, u3_y - 1.5, u3_x + 9, u3_y + 20)
-    if c1_x + 6 > u3_body[0] and c1_x - 1 < u3_body[2] and c1_y + 2.5 > u3_body[1] and c1_y - 2.5 < u3_body[3]:
-        c1_x = max(u2_x - 10, j1_x + 8 + 4)
-        c1_y = min(u2_y + 2, u3_body[1] - 4)
+    # C1: SRAM bypass — try left of U2, fallback between R9-R12 and IDC
+    j1_right = j1_x + 8 + 2  # J1 body right edge + clearance
+    u2_left = u2_x - 1.5 - 1  # U2 body left edge - clearance
+    c1_width = 7  # body width (-1 to +6)
+    if u2_left - j1_right >= c1_width:
+        # Fits between J1 and U2
+        c1_x = j1_right + 1
+        c1_y = u2_y + 2
+    else:
+        # Not enough space — put between R9-R12 and IDC, below R9-R12
+        c1_x = j2_x - 12
+        c1_y = r9_y + 3 * r9_spacing + 5  # below last resistor R12 + clearance
     positions['C1'] = (c1_x, c1_y, 0)
 
     # C2: 595 bypass — right of U3
@@ -196,6 +200,51 @@ def compute_layout(W, H):
         positions[tp_name] = (tp_x, tp_y_start + i * tp_spacing, 0)
 
     return positions
+
+
+def clamp_texts_to_board(board, left, top, right, bottom, margin=2):
+    """Ensure all footprint texts (Reference, Value) stay within board area.
+
+    If a text is outside the board, flip its offset to the opposite side
+    of the footprint. If still outside, clamp to the nearest edge.
+    """
+    fixed = 0
+    for fp in board.GetFootprints():
+        fp_pos = fp.GetPosition()
+        fp_x = pcbnew.ToMM(fp_pos.x)
+        fp_y = pcbnew.ToMM(fp_pos.y)
+
+        for text_item in [fp.Reference(), fp.Value()]:
+            pos = text_item.GetPosition()
+            tx = pcbnew.ToMM(pos.x)
+            ty = pcbnew.ToMM(pos.y)
+
+            # Offset from footprint origin
+            dx = tx - fp_x
+            dy = ty - fp_y
+
+            needs_fix = False
+            if tx < left + margin:
+                dx = abs(dx)
+                needs_fix = True
+            elif tx > right - margin:
+                dx = -abs(dx)
+                needs_fix = True
+            if ty < top + margin:
+                dy = abs(dy)
+                needs_fix = True
+            elif ty > bottom - margin:
+                dy = -abs(dy)
+                needs_fix = True
+
+            if needs_fix:
+                new_x = max(left + margin, min(right - margin, fp_x + dx))
+                new_y = max(top + margin, min(bottom - margin, fp_y + dy))
+                text_item.SetPosition(pcbnew.VECTOR2I(
+                    pcbnew.FromMM(new_x), pcbnew.FromMM(new_y)))
+                fixed += 1
+
+    return fixed
 
 
 def add_zone(board, net_code, layer, x1, y1, x2, y2):
@@ -285,11 +334,16 @@ def main():
         if ref.startswith('H'):
             fp.Reference().SetLayer(pcbnew.F_Fab)
 
-    # 6. Add GND zone on B.Cu
+    # 6. Clamp all texts inside board area
+    fixed = clamp_texts_to_board(board, 100, 100, 100 + W, 100 + H)
+    if fixed:
+        print(f"Fixed {fixed} texts outside board area")
+
+    # 7. Add GND zone on B.Cu
     add_zone(board, 1, pcbnew.B_Cu, 100, 100, 100 + W, 100 + H)
     print("Added GND zone on B.Cu")
 
-    # 7. Save
+    # 8. Save
     board.Save(PCB_PATH)
     print(f"\nSaved {W}x{H}mm 2-layer PCB: {PCB_PATH}")
 
