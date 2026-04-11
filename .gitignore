@@ -4,6 +4,7 @@ build/
 *.uf2
 *.bin
 *.hex
+!bin/**/*.hex
 *.map
 *.dis
 .vscode/
