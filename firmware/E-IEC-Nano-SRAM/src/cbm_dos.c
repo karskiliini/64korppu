@@ -374,6 +374,11 @@ bool cbm_dos_talk_byte(uint8_t sa, uint8_t *byte, bool *eoi) {
         return cbm_dos_talk_byte_compressed(sa, byte, eoi);
     }
 
+    if (sa == IEC_SA_COMMAND) {
+        /* Error channel (SA 15): read from error buffer */
+        return iec_error_talk_byte(byte, eoi);
+    }
+
     if (sa == IEC_SA_LOAD) {
         /* Directory listing */
         if (dir_active) {

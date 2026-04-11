@@ -53,5 +53,6 @@ bool iec_receive_byte_atn(uint8_t *byte);
 bool iec_receive_byte(uint8_t *byte, bool *eoi);
 bool iec_send_byte(uint8_t byte, bool eoi);
 void iec_set_error(uint8_t code, const char *msg, uint8_t track, uint8_t sector);
+bool iec_error_talk_byte(uint8_t *byte, bool *eoi);
 
 #endif /* IEC_PROTOCOL_H */

@@ -3,6 +3,8 @@
 #include "config.h"
 #include "fastload.h"
 #include "fastload_jiffydos.h"
+#include "uart.h"
+#include "led_debug.h"
 
 #ifdef __AVR__
 
@@ -59,7 +61,7 @@ bool iec_receive_byte_atn(uint8_t *byte) {
     uint16_t timeout = 0;
     while (IEC_IS_LOW(IEC_PIN_CLK)) {
         _delay_us(1);
-        if (++timeout > IEC_TIMEOUT_US) return false;
+        if (++timeout > IEC_TIMEOUT_US) { IEC_RELEASE(IEC_PIN_DATA); return false; }
     }
 
     /* Release DATA */
@@ -71,7 +73,7 @@ bool iec_receive_byte_atn(uint8_t *byte) {
         timeout = 0;
         while (!IEC_IS_LOW(IEC_PIN_CLK)) {
             _delay_us(1);
-            if (++timeout > IEC_TIMEOUT_US) return false;
+            if (++timeout > IEC_TIMEOUT_US) { iec_release_all(); return false; }
         }
 
         /* Read data bit */
@@ -83,7 +85,7 @@ bool iec_receive_byte_atn(uint8_t *byte) {
         timeout = 0;
         while (IEC_IS_LOW(IEC_PIN_CLK)) {
             _delay_us(1);
-            if (++timeout > IEC_TIMEOUT_US) return false;
+            if (++timeout > IEC_TIMEOUT_US) { iec_release_all(); return false; }
         }
     }
 
@@ -113,11 +115,11 @@ bool iec_receive_byte(uint8_t *byte, bool *eoi) {
             uint16_t timeout = 0;
             while (!IEC_IS_LOW(IEC_PIN_CLK)) {
                 _delay_us(1);
-                if (++timeout > IEC_TIMEOUT_US) return false;
+                if (++timeout > IEC_TIMEOUT_US) { iec_release_all(); return false; }
             }
             break;
         }
-        if (IEC_IS_LOW(IEC_PIN_ATN)) return false;
+        if (IEC_IS_LOW(IEC_PIN_ATN)) { iec_release_all(); return false; }
     }
 
     /* Receive 8 bits */
@@ -125,7 +127,7 @@ bool iec_receive_byte(uint8_t *byte, bool *eoi) {
         uint16_t timeout = 0;
         while (!IEC_IS_LOW(IEC_PIN_CLK)) {
             _delay_us(1);
-            if (++timeout > IEC_TIMEOUT_US) return false;
+            if (++timeout > IEC_TIMEOUT_US) { iec_release_all(); return false; }
         }
 
         if (!IEC_IS_LOW(IEC_PIN_DATA)) {
@@ -135,7 +137,7 @@ bool iec_receive_byte(uint8_t *byte, bool *eoi) {
         timeout = 0;
         while (IEC_IS_LOW(IEC_PIN_CLK)) {
             _delay_us(1);
-            if (++timeout > IEC_TIMEOUT_US) return false;
+            if (++timeout > IEC_TIMEOUT_US) { iec_release_all(); return false; }
         }
     }
 
@@ -217,6 +219,17 @@ void iec_set_error(uint8_t code, const char *msg, uint8_t track, uint8_t sector)
     ch->eof = false;
 }
 
+bool iec_error_talk_byte(uint8_t *byte, bool *eoi) {
+    iec_channel_t *ch = &device.channels[1];
+    if (ch->buf_pos >= ch->buf_len) {
+        *eoi = true;
+        return false;
+    }
+    *byte = ch->buffer[ch->buf_pos++];
+    *eoi = (ch->buf_pos >= ch->buf_len);
+    return true;
+}
+
 void iec_service(void) {
     /* Check for bus reset */
     if (IEC_IS_LOW(IEC_PIN_RESET)) {
@@ -250,6 +263,8 @@ void iec_service(void) {
     }
 
     /* ATN asserted - receive commands */
+    led_green_on();
+    uart_putchar('A');
     IEC_ASSERT(IEC_PIN_DATA);
 
     uint8_t cmd;
@@ -281,10 +296,12 @@ void iec_service(void) {
         } else if ((cmd & 0xE0) == IEC_CMD_LISTEN) {
             if (device_num == device.device_number) {
                 device.state = IEC_STATE_LISTENER;
+                uart_puts("L8\r\n");
             }
         } else if ((cmd & 0xE0) == IEC_CMD_TALK) {
             if (device_num == device.device_number) {
                 device.state = IEC_STATE_TALKER;
+                uart_puts("T8\r\n");
             }
         } else if ((cmd & 0xF0) == IEC_CMD_OPEN) {
             uint8_t sa = cmd & 0x0F;
@@ -304,6 +321,8 @@ void iec_service(void) {
             cbm_dos_close(sa);
         }
     }
+
+    led_green_off();
 
     /* ATN released — detect fast-load protocol for talker mode */
     if (device.state == IEC_STATE_TALKER) {

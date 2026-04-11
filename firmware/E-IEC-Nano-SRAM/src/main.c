@@ -18,6 +18,7 @@
 #include "fastload_burst.h"
 #include "fastload_epyx.h"
 #include "compress_proto.h"
+#include "led_debug.h"
 
 /*
  * 64korppu — Alternative E: Arduino Nano + 23LC512 SPI SRAM
@@ -27,9 +28,9 @@
  *
  * Boot sequence:
  *   1. Initialize SPI + SRAM + shift register
- *   2. Initialize floppy drive (motor on, recalibrate)
- *   3. Read boot sector, mount FAT12
- *   4. Initialize IEC bus (device #8)
+ *   2. Initialize IEC bus (device #8) — early, so device responds ASAP
+ *   3. Initialize floppy drive (motor on, recalibrate)
+ *   4. Read boot sector, mount FAT12
  *   5. Enter main loop: service IEC bus
  */
 
@@ -54,7 +55,7 @@ int disk_write_sector(uint16_t lba, const uint8_t *buf) {
 /*
  * UART initialization for debug output (9600 baud at 16MHz).
  */
-static void uart_init(void) {
+void uart_init(void) {
     uint16_t baud_setting = (F_CPU / 8 / 9600) - 1;
     UBRR0H = baud_setting >> 8;
     UBRR0L = baud_setting & 0xFF;
@@ -63,12 +64,12 @@ static void uart_init(void) {
     UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);  /* 8N1 */
 }
 
-static void uart_putchar(char c) {
+void uart_putchar(char c) {
     while (!(UCSR0A & (1 << UDRE0)));
     UDR0 = c;
 }
 
-static void uart_puts(const char *s) {
+void uart_puts(const char *s) {
     while (*s) uart_putchar(*s++);
 }
 
@@ -78,6 +79,9 @@ int main(void) {
 
     uart_init();
     uart_puts("\r\n=== 64korppu v1.0 (Nano+SRAM) ===\r\n");
+
+    /* Initialize LED debug (green D9, optional red A5) */
+    led_debug_init();
 
     /* Initialize SPI and SRAM */
     sram_init();
@@ -90,28 +94,7 @@ int main(void) {
     /* Initialize MFM codec (Timer1) */
     mfm_init();
 
-    /* Initialize floppy drive */
-    floppy_init();
-    uart_puts("Floppy init...\r\n");
-
-    floppy_motor_on();
-    int rc = floppy_recalibrate();
-    if (rc == FLOPPY_OK) {
-        uart_puts("Drive OK\r\n");
-    } else {
-        uart_puts("No drive!\r\n");
-    }
-
-    /* Mount FAT12 */
-    uart_puts("Mount FAT12...\r\n");
-    rc = fat12_mount();
-    if (rc == FAT12_OK) {
-        uart_puts("FAT12 OK\r\n");
-    } else {
-        uart_puts("No disk\r\n");
-    }
-
-    /* Initialize IEC bus */
+    /* Initialize IEC bus EARLY — device responds on bus ASAP */
     uart_puts("IEC device #8\r\n");
     iec_init(IEC_DEFAULT_DEVICE);
     cbm_dos_init();
@@ -127,10 +110,34 @@ int main(void) {
     compress_proto_init();
     uart_puts("Compress OK\r\n");
 
-    /* Enable interrupts */
+    /* Enable interrupts before floppy init (MFM capture needs ISR) */
     sei();
 
+    /* Initialize floppy drive (~2.8s blocking) */
+    floppy_init();
+    uart_puts("Floppy init...\r\n");
+
+    floppy_motor_on();
+    int rc = floppy_recalibrate();
+    if (rc == FLOPPY_OK) {
+        uart_puts("Drive OK\r\n");
+    } else {
+        uart_puts("No drive!\r\n");
+        led_debug_blink(DBG_FLOPPY_ERROR);
+    }
+
+    /* Mount FAT12 */
+    uart_puts("Mount FAT12...\r\n");
+    rc = fat12_mount();
+    if (rc == FAT12_OK) {
+        uart_puts("FAT12 OK\r\n");
+    } else {
+        uart_puts("No disk\r\n");
+        led_debug_blink(DBG_NO_DISK);
+    }
+
     uart_puts("Ready.\r\n");
+    led_debug_blink(DBG_BOOT_OK);
 
     /* Main loop: service IEC bus */
     while (1) {

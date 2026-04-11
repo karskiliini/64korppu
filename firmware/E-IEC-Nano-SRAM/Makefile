@@ -42,7 +42,8 @@ SRCS = $(SRCDIR)/main.c \
        $(SRCDIR)/fastload_burst.c \
        $(SRCDIR)/fastload_epyx.c \
        $(SRCDIR)/lz4_compress.c \
-       $(SRCDIR)/compress_proto.c
+       $(SRCDIR)/compress_proto.c \
+       $(SRCDIR)/led_debug.c
 
 OBJS = $(SRCS:.c=.o)
 
