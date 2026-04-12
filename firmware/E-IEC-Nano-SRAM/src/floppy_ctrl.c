@@ -74,17 +74,55 @@ void floppy_init(void) {
 
 void floppy_motor_on(void) {
     if (!state.motor_on) {
-        TRACE("[FLP] motor ON, spin-up...\r\n");
+        TRACE("[FLP] motor ON, waiting for speed...\r\n");
         shiftreg_assert_bit(SR_BIT_MOTEA);
         shiftreg_assert_bit(SR_BIT_MOTOR);
-        /* Service IEC during 500ms spin-up wait */
-        for (uint16_t i = 0; i < FLOPPY_MOTOR_SPIN_MS; i++) {
+        PORTB |= (1 << FLOPPY_LED_PIN);  /* LED on */
+
+        /*
+         * Wait for motor to reach stable speed by monitoring /RDATA (ICP1).
+         * When disk spins at correct rate, flux transitions produce valid
+         * MFM intervals (64-160 Timer1 ticks). We wait until we see
+         * several consecutive valid intervals → motor is at speed.
+         *
+         * Timeout after 1000ms if no valid transitions (no disk, or failure).
+         * IEC bus is serviced during the wait.
+         */
+        uint16_t prev = ICR1;
+        uint8_t valid_count = 0;
+        bool ready = false;
+
+        for (uint16_t ms = 0; ms < 1000 && !ready; ms++) {
             _delay_ms(1);
             iec_poll();
+
+            /* Check for ICP events */
+            if (TIFR1 & (1 << ICF1)) {
+                uint16_t now = ICR1;
+                uint16_t interval = now - prev;
+                prev = now;
+                TIFR1 = (1 << ICF1);  /* Clear flag */
+
+                /* Valid MFM interval? (2T..4T = 40..200 ticks at 16MHz) */
+                if (interval >= 40 && interval <= 200) {
+                    valid_count++;
+                    if (valid_count >= 8) {
+                        ready = true;
+                        TRACE("[FLP] motor ready after ");
+                        uart_putdec(ms);
+                        TRACE("ms\r\n");
+                    }
+                } else {
+                    valid_count = 0;  /* Reset on bad interval */
+                }
+            }
         }
+
+        if (!ready) {
+            TRACE("[FLP] motor spin-up timeout (no /RDATA)\r\n");
+        }
+
         state.motor_on = true;
-        PORTB |= (1 << FLOPPY_LED_PIN);  /* LED on */
-        TRACE("[FLP] motor ON done\r\n");
     }
 }
 

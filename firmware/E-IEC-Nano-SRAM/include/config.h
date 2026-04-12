@@ -47,7 +47,6 @@
 /* Timing constants (microseconds) */
 #define FLOPPY_STEP_PULSE_US    3
 #define FLOPPY_STEP_SETTLE_MS  15
-#define FLOPPY_MOTOR_SPIN_MS  500
 #define FLOPPY_STEP_RATE_MS     3
 
 /* Error codes */
