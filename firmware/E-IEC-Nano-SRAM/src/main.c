@@ -132,6 +132,17 @@ int main(void) {
     /* Disable interrupts during init */
     cli();
 
+    /*
+     * CRITICAL: force 74HC595 outputs safe BEFORE anything else.
+     * At power-on, shift register outputs are random. /WGATE could
+     * be asserted (LOW) which would corrupt disk data. RCLK (D6)
+     * is floating as INPUT, so any SPI activity could accidentally
+     * latch garbage. Pin RCLK LOW immediately, then write 0xFF
+     * (all deasserted) as soon as SPI is available.
+     */
+    DDRD |= (1 << PD6);    /* RCLK = output */
+    PORTD &= ~(1 << PD6);  /* RCLK = LOW (prevent accidental latch) */
+
     uart_init();
     TRACE("\r\n=== 64korppu v1.0 (Nano+SRAM) ===\r\n");
 
@@ -142,7 +153,7 @@ int main(void) {
     sram_init();
     TRACE("SRAM OK\r\n");
 
-    /* Initialize shift register */
+    /* Initialize shift register — writes 0xFF (all safe) immediately */
     shiftreg_init();
     TRACE("74HC595 OK\r\n");
 
