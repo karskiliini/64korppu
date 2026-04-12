@@ -1469,7 +1469,7 @@
       (at 62.23 86.36 0)
       (effects (font (size 1.27 1.27)))
     )
-    (property "Value" "1k"
+    (property "Value" "100"
       (at 62.23 91.44 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -1494,7 +1494,7 @@
       (at 62.23 93.98 0)
       (effects (font (size 1.27 1.27)))
     )
-    (property "Value" "1k"
+    (property "Value" "100"
       (at 62.23 99.06 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -1519,7 +1519,7 @@
       (at 62.23 101.60 0)
       (effects (font (size 1.27 1.27)))
     )
-    (property "Value" "1k"
+    (property "Value" "100"
       (at 62.23 106.68 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -1544,7 +1544,7 @@
       (at 62.23 109.22 0)
       (effects (font (size 1.27 1.27)))
     )
-    (property "Value" "1k"
+    (property "Value" "100"
       (at 62.23 114.30 0)
       (effects (font (size 1.27 1.27)))
     )

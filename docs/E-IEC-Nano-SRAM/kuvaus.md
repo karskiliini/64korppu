@@ -99,7 +99,7 @@ Nanon sisäinen 2 KB RAM käytetään:
 | 6-pin DIN -liitin | IEC-väylä C64:lle | ~2€ |
 | 34-pin IDC -liitin | PC-floppy | ~1€ |
 | 4-pin Berg liitin | Virta floppy-asemalle | ~1€ |
-| Vastukset 1kΩ x4 | IEC-suojavastukset | ~0.5€ |
+| Vastukset 100Ω x4 | IEC-suojavastukset | ~0.5€ |
 | Kond. 100nF x3 | Bypass | ~0.5€ |
 | **Yhteensä** | | **~10-13€** |
 

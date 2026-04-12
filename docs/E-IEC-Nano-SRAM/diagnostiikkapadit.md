@@ -40,7 +40,7 @@ Kaikki padit ovat 1.5mm pyöreitä kuparipadeja ilman juotepastaa — mittapää
 
 ### IEC-väylä / C64 (TP3-TP5)
 
-Nämä signaalit kulkevat C64:n ja Arduinon välillä 1kΩ suojavastusten läpi.
+Nämä signaalit kulkevat C64:n ja Arduinon välillä 100Ω suojavastusten läpi.
 Kaikki ovat open collector: lepotilassa HIGH (4.7kΩ pull-up → +5V), aktiivisena LOW.
 
 | Padi | Signaali | Lepotila | Aktiivinen | Merkitys |
