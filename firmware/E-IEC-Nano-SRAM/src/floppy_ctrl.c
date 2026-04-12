@@ -299,26 +299,34 @@ int floppy_read_sector(uint8_t track, uint8_t side, uint8_t sector,
 
     floppy_select_side(side);
 
-    /* Capture raw MFM track to SRAM */
-    TRACE("[FLP] MFM capture...\r\n");
-    rc = mfm_capture_track();
-    if (rc != 0) {
-        TRACE("[FLP] MFM capture FAIL rc=");
-        uart_putdec((uint16_t)(-rc));
-        TRACE("\r\n");
-        return FLOPPY_ERR_READ;
-    }
-    TRACE("[FLP] MFM capture OK\r\n");
+    /* Capture + decode with retry.
+     * 1st attempt: uses default/previous thresholds, calibrates from raw data.
+     * 2nd+ attempts: uses calibrated thresholds from previous capture. */
+    for (uint8_t attempt = 0; attempt < 16; attempt++) {
+        TRACE("[FLP] attempt ");
+        uart_putdec(attempt);
+        TRACE(" capture...\r\n");
 
-    /* Decode sector from SRAM track buffer */
-    TRACE("[FLP] MFM decode R=");
-    uart_putdec(sector);
-    TRACE("...\r\n");
-    rc = mfm_decode_sector(sector, buf);
-    if (rc != 0) {
-        TRACE("[FLP] MFM decode FAIL\r\n");
-        return FLOPPY_ERR_READ;
+        rc = mfm_capture_track();
+        if (rc != 0) {
+            TRACE("[FLP] capture FAIL\r\n");
+            continue;  /* Retry capture */
+        }
+
+        TRACE("[FLP] decode R=");
+        uart_putdec(sector);
+        TRACE("...\r\n");
+        rc = mfm_decode_sector(sector, buf);
+        if (rc == 0) {
+            goto read_ok;  /* Success! */
+        }
+        TRACE("[FLP] decode FAIL, retrying with calibrated thresholds\r\n");
     }
+    /* All attempts failed */
+    TRACE("[FLP] all 16 attempts failed\r\n");
+    return FLOPPY_ERR_READ;
+
+read_ok:
     TRACE("[FLP] read OK, first bytes: ");
     uart_puthex8(buf[0]);
     uart_putchar(' ');
