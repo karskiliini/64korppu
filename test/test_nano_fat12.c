@@ -666,6 +666,243 @@ TEST(fat_read_fails_during_mount) {
     ASSERT(!fat12_is_mounted());
 }
 
+/* --- Real disk scenarios --- */
+
+/*
+ * Helper: build a raw FAT12 1.44MB disk image in mock_disk.
+ * Simulates a PC-formatted floppy — constructed byte-by-byte,
+ * not using our own fat12_format().
+ */
+static void build_raw_fat12_image(const char *label) {
+    memset(mock_disk, 0, MOCK_DISK_SIZE);
+
+    /* Boot sector (sector 0) */
+    fat12_bpb_t *bpb = (fat12_bpb_t *)mock_disk;
+    bpb->jmp[0] = 0xEB; bpb->jmp[1] = 0x3C; bpb->jmp[2] = 0x90;
+    memcpy(bpb->oem_name, "MSDOS5.0", 8);
+    bpb->bytes_per_sector = 512;
+    bpb->sectors_per_cluster = 1;
+    bpb->reserved_sectors = 1;
+    bpb->num_fats = 2;
+    bpb->root_entries = 224;
+    bpb->total_sectors = 2880;
+    bpb->media_type = 0xF0;
+    bpb->sectors_per_fat = 9;
+    bpb->sectors_per_track = 18;
+    bpb->num_heads = 2;
+    bpb->boot_sig = 0x29;
+    bpb->volume_serial = 0xDEADBEEF;
+    memcpy(bpb->volume_label, label, 11);
+    memcpy(bpb->fs_type, "FAT12   ", 8);
+    mock_disk[510] = 0x55;
+    mock_disk[511] = 0xAA;
+
+    /* FAT #1 (sectors 1-9): reserved entries for clusters 0,1 */
+    uint8_t *fat1 = &mock_disk[FAT12_FAT1_START * 512];
+    fat1[0] = 0xF0;  /* Media byte in cluster 0 */
+    fat1[1] = 0xFF;  /* Cluster 0 upper + cluster 1 lower */
+    fat1[2] = 0xFF;  /* Cluster 1 upper */
+
+    /* FAT #2 (sectors 10-18): identical copy */
+    memcpy(&mock_disk[FAT12_FAT2_START * 512],
+           &mock_disk[FAT12_FAT1_START * 512],
+           FAT12_SECTORS_PER_FAT * 512);
+}
+
+/*
+ * Helper: write a FAT12 entry into the raw FAT in mock_disk.
+ * Handles the 12-bit packed format directly.
+ */
+static void raw_fat_set_entry(uint16_t cluster, uint16_t value) {
+    uint8_t *fat1 = &mock_disk[FAT12_FAT1_START * 512];
+    uint8_t *fat2 = &mock_disk[FAT12_FAT2_START * 512];
+    uint32_t offset = cluster + (cluster / 2);
+
+    uint16_t raw = (uint16_t)fat1[offset] | ((uint16_t)fat1[offset + 1] << 8);
+    if (cluster & 1) {
+        raw = (raw & 0x000F) | ((value & 0x0FFF) << 4);
+    } else {
+        raw = (raw & 0xF000) | (value & 0x0FFF);
+    }
+    fat1[offset] = raw & 0xFF;
+    fat1[offset + 1] = (raw >> 8) & 0xFF;
+    /* Mirror to FAT #2 */
+    fat2[offset] = fat1[offset];
+    fat2[offset + 1] = fat1[offset + 1];
+}
+
+/*
+ * Helper: add a file entry to the root directory in mock_disk.
+ * Returns the root directory slot index used.
+ */
+static int raw_add_root_entry(const char *name8, const char *ext3,
+                               uint8_t attr, uint16_t cluster,
+                               uint32_t file_size) {
+    fat12_dirent_t *root = (fat12_dirent_t *)&mock_disk[FAT12_ROOT_DIR_START * 512];
+    for (int i = 0; i < FAT12_ROOT_ENTRIES; i++) {
+        if ((uint8_t)root[i].name[0] == 0x00 ||
+            (uint8_t)root[i].name[0] == 0xE5) {
+            memcpy(root[i].name, name8, 8);
+            memcpy(root[i].ext, ext3, 3);
+            root[i].attr = attr;
+            root[i].cluster_lo = cluster;
+            root[i].file_size = file_size;
+            return i;
+        }
+    }
+    return -1;
+}
+
+/*
+ * Helper: write raw data to a cluster's data sector in mock_disk.
+ */
+static void raw_write_cluster(uint16_t cluster, const void *data, uint16_t len) {
+    uint32_t sector = FAT12_DATA_START + cluster - 2;
+    if (len > 512) len = 512;
+    memcpy(&mock_disk[sector * 512], data, len);
+}
+
+/* Test: unformatted disk (all zeros) → format from controller */
+TEST(format_blank_unformatted_disk) {
+    reset_mocks();
+    /* mock_disk is all zeros = completely unformatted blank floppy */
+
+    /* Verify: mount should fail — no valid BPB */
+    ASSERT_EQ(fat12_mount(), FAT12_ERR_NOT_FAT12);
+    ASSERT(!fat12_is_mounted());
+
+    /* Format the blank disk (same as C64: OPEN 15,8,15,"N:MYDISK") */
+    ASSERT_EQ(fat12_format("MY DISK    "), FAT12_OK);
+    ASSERT(fat12_is_mounted());
+
+    /* Verify boot sector was written correctly */
+    fat12_bpb_t *bpb = (fat12_bpb_t *)mock_disk;
+    ASSERT_EQ(bpb->bytes_per_sector, 512);
+    ASSERT_EQ(bpb->total_sectors, 2880);
+    ASSERT_EQ(bpb->media_type, 0xF0);
+    ASSERT_EQ(mock_disk[510], 0x55);
+    ASSERT_EQ(mock_disk[511], 0xAA);
+
+    /* Verify the disk is fully usable: create, write, close, read back */
+    uint8_t data[] = "Commodore 64!";
+    ASSERT_EQ(create_file("HELLO   ", "PRG", data, 13), FAT12_OK);
+
+    /* Unmount and remount to verify persistence */
+    fat12_unmount();
+    ASSERT_EQ(fat12_mount(), FAT12_OK);
+
+    fat12_file_t file;
+    ASSERT_EQ(fat12_open_read("HELLO   ", "PRG", &file), FAT12_OK);
+    ASSERT_EQ(file.file_size, 13);
+
+    uint8_t buf[32];
+    int n = fat12_read(&file, buf, 32);
+    ASSERT_EQ(n, 13);
+    ASSERT(memcmp(buf, "Commodore 64!", 13) == 0);
+
+    /* Verify free space is reasonable (~1.4MB minus one cluster) */
+    uint32_t free = fat12_free_space();
+    ASSERT(free > 1400000);
+}
+
+/*
+ * Test: PC-formatted disk with existing file.
+ * Simulates inserting a floppy that was formatted on a PC and contains
+ * a file TEXT.TXT with content "abc".
+ * The raw disk image is constructed byte-by-byte — NOT using our
+ * own fat12_format(), to test that we can read real PC-formatted disks.
+ */
+TEST(read_file_from_pc_formatted_disk) {
+    reset_mocks();
+
+    /* Build a raw FAT12 disk image as if formatted on a PC */
+    build_raw_fat12_image("PC DISK    ");
+
+    /* Add volume label entry to root directory */
+    raw_add_root_entry("PC DISK ", "   ", FAT12_ATTR_VOLUME_ID, 0, 0);
+
+    /* Add file: TEXT.TXT, 3 bytes, stored in cluster 2 */
+    raw_add_root_entry("TEXT    ", "TXT", FAT12_ATTR_ARCHIVE, 2, 3);
+
+    /* Set FAT: cluster 2 = EOF (file uses one cluster) */
+    raw_fat_set_entry(2, 0xFFF);
+
+    /* Write file data to cluster 2 (= sector 33) */
+    raw_write_cluster(2, "abc", 3);
+
+    /* --- Now test that our controller can read this disk --- */
+
+    /* Mount should succeed */
+    ASSERT_EQ(fat12_mount(), FAT12_OK);
+    ASSERT(fat12_is_mounted());
+
+    /* Open and read TEXT.TXT */
+    fat12_file_t file;
+    ASSERT_EQ(fat12_open_read("TEXT    ", "TXT", &file), FAT12_OK);
+    ASSERT_EQ(file.file_size, 3);
+    ASSERT_EQ(file.first_cluster, 2);
+
+    uint8_t buf[16];
+    memset(buf, 0, sizeof(buf));
+    int n = fat12_read(&file, buf, 16);
+    ASSERT_EQ(n, 3);
+    ASSERT_EQ(buf[0], 'a');
+    ASSERT_EQ(buf[1], 'b');
+    ASSERT_EQ(buf[2], 'c');
+
+    /* Directory listing should show the file */
+    uint16_t dir_idx = 0;
+    fat12_dirent_t entry;
+    bool found_text = false;
+    while (fat12_readdir(&dir_idx, &entry) == FAT12_OK) {
+        if (entry.attr & FAT12_ATTR_VOLUME_ID) continue;
+        if (memcmp(entry.name, "TEXT    ", 8) == 0 &&
+            memcmp(entry.ext, "TXT", 3) == 0) {
+            found_text = true;
+            ASSERT_EQ(entry.file_size, 3);
+        }
+    }
+    ASSERT(found_text);
+
+    /* Free space: total clusters minus 1 used */
+    uint32_t free = fat12_free_space();
+    ASSERT_EQ(free, (uint32_t)(FAT12_TOTAL_CLUSTERS - 1) * 512);
+}
+
+/*
+ * Test: PC-formatted disk with multi-cluster file.
+ * TEXT.TXT contains 600 bytes (2 clusters) to test cluster chain following.
+ */
+TEST(read_multicluster_file_from_pc_disk) {
+    reset_mocks();
+
+    build_raw_fat12_image("BIGFILE    ");
+
+    /* File: TEXT.TXT, 600 bytes, clusters 2→3→EOF */
+    raw_add_root_entry("TEXT    ", "TXT", FAT12_ATTR_ARCHIVE, 2, 600);
+    raw_fat_set_entry(2, 3);     /* Cluster 2 → 3 */
+    raw_fat_set_entry(3, 0xFFF); /* Cluster 3 → EOF */
+
+    /* Write 600 bytes: first 512 in cluster 2, remaining 88 in cluster 3 */
+    uint8_t data[600];
+    for (int i = 0; i < 600; i++) data[i] = (uint8_t)(i & 0xFF);
+    raw_write_cluster(2, data, 512);
+    raw_write_cluster(3, data + 512, 88);
+
+    ASSERT_EQ(fat12_mount(), FAT12_OK);
+
+    fat12_file_t file;
+    ASSERT_EQ(fat12_open_read("TEXT    ", "TXT", &file), FAT12_OK);
+    ASSERT_EQ(file.file_size, 600);
+
+    uint8_t buf[600];
+    int n = fat12_read(&file, buf, 600);
+    ASSERT_EQ(n, 600);
+    for (int i = 0; i < 600; i++) {
+        ASSERT_EQ(buf[i], (uint8_t)(i & 0xFF));
+    }
+}
+
 /* ---- Main ---- */
 
 int main(void) {
@@ -721,6 +958,11 @@ int main(void) {
     RUN(multiple_files);
     RUN(overwrite_existing_file);
     RUN(fat_flush_writes_both_copies);
+
+    printf("\nReal disk scenarios:\n");
+    RUN(format_blank_unformatted_disk);
+    RUN(read_file_from_pc_formatted_disk);
+    RUN(read_multicluster_file_from_pc_disk);
 
     printf("\nDisk I/O errors (no disk):\n");
     RUN(mount_fails_when_disk_io_fails);
