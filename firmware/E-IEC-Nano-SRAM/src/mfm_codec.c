@@ -262,15 +262,13 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
             if (raw_avail > 30) raw_avail = 30;
             pulse_num++;
 
-            /* Debug: dump raw_bits periodically + near-sync detection */
-            if (pulse_num <= 5 || (pulse_num % 5000) == 0) {
-                TRACE("[MFM] #");
-                uart_putdec((uint16_t)pulse_num);
-                TRACE(" raw=0x");
+            /* Debug: dump every raw_bits for first 200 pulses */
+            if (pulse_num <= 200) {
                 uart_puthex16((uint16_t)(raw_bits & 0xFFFF));
-                TRACE(" avail=");
-                uart_putdec(raw_avail);
-                TRACE("\r\n");
+                uart_putchar(' ');
+                if ((pulse_num % 8) == 0) TRACE("\r\n");
+            } else if (pulse_num == 201) {
+                TRACE("\r\n[MFM] ...scanning...\r\n");
             }
 
             if (!reading_id && !reading_data) {
