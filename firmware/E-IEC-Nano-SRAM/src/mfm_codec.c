@@ -203,7 +203,7 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
 
             while (bit_count >= 2) {
                 bit_count -= 2;
-                uint8_t data_bit = (shift_reg >> bit_count) & 0x01;
+                uint8_t data_bit = (shift_reg >> (bit_count + 1)) & 0x01;
                 byte_val = (byte_val << 1) | data_bit;
 
                 if (++field_pos % 8 == 0) {
@@ -308,7 +308,7 @@ int mfm_find_sectors(mfm_sector_id_t *ids_out, int max_ids) {
 
             while (bit_count >= 2) {
                 bit_count -= 2;
-                uint8_t data_bit = (shift_reg >> bit_count) & 0x01;
+                uint8_t data_bit = (shift_reg >> (bit_count + 1)) & 0x01;
                 byte_val = (byte_val << 1) | data_bit;
 
                 if (++field_pos % 8 == 0) {
@@ -479,7 +479,7 @@ static int mfm_wait_for_sector(uint8_t target_sector) {
 
         while (bit_count >= 2) {
             bit_count -= 2;
-            uint8_t data_bit = (shift_reg >> bit_count) & 0x01;
+            uint8_t data_bit = (shift_reg >> (bit_count + 1)) & 0x01;
             byte_val = (byte_val << 1) | data_bit;
             byte_bits++;
 
