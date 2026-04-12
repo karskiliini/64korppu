@@ -93,9 +93,7 @@ ISR(TIMER1_CAPT_vect) {
     uint16_t thr_long = MFM_THRESHOLD_LONG;
 
     if (prev_code <= 1) {  /* Previous was 2T or 3T → short recovery */
-        thr_short  += 24;
-        thr_medium += 24;
-        thr_long   += 24;
+        thr_short += 24;  /* Only 2T/3T boundary shifts; 3T/4T stays fixed */
     }
 
     uint8_t code;
