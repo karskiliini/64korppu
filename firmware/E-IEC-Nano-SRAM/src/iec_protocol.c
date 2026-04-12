@@ -26,6 +26,7 @@
 
 static iec_device_t device = {0};
 static volatile bool atn_pending = false;
+static bool reset_held = false;  /* Edge detection for /RESET */
 
 /* Pin manipulation macros */
 #define IEC_ASSERT(pin)   do { IEC_DDR |= (1 << (pin)); IEC_PORT &= ~(1 << (pin)); } while(0)
@@ -282,21 +283,30 @@ bool iec_error_talk_byte(uint8_t *byte, bool *eoi) {
 }
 
 void iec_service(void) {
-    /* Check for bus reset */
+    /*
+     * Bus reset: edge-triggered, not level-triggered.
+     * /RESET LOW  → shutdown once, then idle (no reboot loop)
+     * /RESET HIGH → reinit once (when C64 turns on)
+     * C64 off (/RESET stuck LOW) → controller stays idle, no action
+     */
     if (IEC_IS_LOW(IEC_PIN_RESET)) {
-        TRACE("[IEC] *** BUS RESET ***\r\n");
-        device.state = IEC_STATE_IDLE;
-        iec_release_all();
+        if (!reset_held) {
+            /* Falling edge: /RESET just went LOW → shutdown */
+            reset_held = true;
+            TRACE("[IEC] *** BUS RESET ***\r\n");
+            device.state = IEC_STATE_IDLE;
+            iec_release_all();
+            floppy_motor_off();
+            fat12_unmount();
+            cbm_dos_init();
+            fastload_reset();
+        }
+        return;  /* Stay idle while /RESET is held LOW */
+    }
 
-        /* Shutdown floppy and close any open files */
-        floppy_motor_off();
-        fat12_unmount();
-        cbm_dos_init();
-        fastload_reset();
-
-        TRACE("[IEC] waiting for reset release...\r\n");
-        while (IEC_IS_LOW(IEC_PIN_RESET));
-        _delay_ms(500);
+    /* /RESET is HIGH — was it just released? */
+    if (reset_held) {
+        reset_held = false;
         TRACE("[IEC] reset released, reinit floppy\r\n");
 
         /* Full floppy reinit (same as boot) */
@@ -307,7 +317,6 @@ void iec_service(void) {
             iec_set_error(CBM_ERR_DRIVE_NOT_READY, "DRIVE NOT READY", 0, 0);
             led_debug_blink(DBG_FLOPPY_ERROR);
             floppy_motor_off();
-            TRACE("[IEC] reinit done (no drive)\r\n");
             return;
         }
         TRACE("[IEC] drive OK\r\n");
@@ -317,7 +326,6 @@ void iec_service(void) {
             iec_set_error(CBM_ERR_DRIVE_NOT_READY, "DRIVE NOT READY", 0, 0);
             led_debug_blink(DBG_NO_DISK);
             floppy_motor_off();
-            TRACE("[IEC] reinit done (no disk)\r\n");
             return;
         }
 
