@@ -62,9 +62,9 @@ void mfm_init(void) {
     TCCR1A = 0;
     TCCR1B = (1 << CS10);  /* No prescaler */
 
-    /* ICP1 input on PB0 (D8), falling edge trigger */
-    TCCR1B &= ~(1 << ICES1);  /* Falling edge */
-    /* ICNC1 disabled — noise canceler adds variable delay with slow signals */
+    /* ICP1 input on PB0 (D8), rising edge trigger (74LS14 inverts signal) */
+    TCCR1B |= (1 << ICES1);   /* Rising edge — 74LS14 inverts /RDATA */
+    TCCR1B |= (1 << ICNC1);   /* Noise canceler OK with fast Schmitt edges */
 
     /* Disable capture interrupt initially */
     TIMSK1 &= ~(1 << ICIE1);

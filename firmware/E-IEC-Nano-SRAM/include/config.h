@@ -163,7 +163,7 @@
  * adds ~28 ticks to each measured interval. Thresholds are shifted
  * accordingly. After R12 is changed to 1kΩ, revert to nominal values.
  */
-#define MFM_PULLUP_DELAY         66     /* Drive internal output delay, R-independent */
+#define MFM_PULLUP_DELAY          0     /* 74LS14 Schmitt-trigger: clean edges, no delay */
 #define MFM_THRESHOLD_SHORT     (80  + MFM_PULLUP_DELAY)   /* < 108: 2T */
 #define MFM_THRESHOLD_MEDIUM    (112 + MFM_PULLUP_DELAY)   /* < 140: 3T */
 #define MFM_THRESHOLD_LONG      (160 + MFM_PULLUP_DELAY)   /* < 188: 4T */
