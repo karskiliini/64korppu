@@ -310,19 +310,59 @@ int mfm_capture_track(void) {
         TRACE("\r\n");
     }
 
-    /* Dump raw timer intervals (first 200 pulses) as hex */
-    TRACE("[MFM] raw ticks (first ");
-    uart_putdec(raw_interval_idx);
-    TRACE("):\r\n");
-    for (uint16_t i = 0; i < raw_interval_idx; i++) {
-        uart_puthex16(raw_intervals[i]);
-        uart_putchar(' ');
-        if ((i % 12) == 11) TRACE("\r\n");
-    }
-    TRACE("\r\n");
-
     /* Calibrate ISR thresholds from raw pulse intervals */
     mfm_calibrate_thresholds();
+
+    /* Human-readable decode of first 200 raw intervals:
+     * 1. Pulse codes: 2/3/4/? per pulse
+     * 2. Decoded bytes at both alignments */
+    if (raw_interval_idx >= 20) {
+        /* Use calibrated thresholds for classification */
+        uint16_t ts = mfm_thr_short;
+        uint16_t tm = mfm_thr_medium;
+        uint16_t tl = mfm_thr_long;
+
+        /* Print pulse codes */
+        TRACE("[MFM] codes: ");
+        for (uint16_t i = 0; i < raw_interval_idx; i++) {
+            uint16_t v = raw_intervals[i];
+            if (v < ts)      uart_putchar('2');
+            else if (v < tm) uart_putchar('3');
+            else if (v < tl) uart_putchar('4');
+            else             uart_putchar('?');
+            if ((i % 64) == 63) TRACE("\r\n");
+        }
+        TRACE("\r\n");
+
+        /* Decode bytes at both offsets using calibrated thresholds */
+        for (uint8_t off = 0; off <= 1; off++) {
+            TRACE("[MFM] bytes off=");
+            uart_putdec(off);
+            TRACE(": ");
+            uint32_t bits = 0;
+            uint8_t avail = 0;
+            uint8_t dbyte = 0, dbits = 0, dcount = 0;
+            for (uint16_t i = 0; i < raw_interval_idx && dcount < 24; i++) {
+                uint16_t v = raw_intervals[i];
+                if (v < ts)       { bits = (bits << 2) | 0x01; avail += 2; }
+                else if (v < tm)  { bits = (bits << 3) | 0x01; avail += 3; }
+                else if (v < tl)  { bits = (bits << 4) | 0x01; avail += 4; }
+                else continue;
+                if (avail > 30) avail = 30;
+                while (avail >= 2 && dcount < 24) {
+                    avail -= 2;
+                    dbyte = (dbyte << 1) | ((bits >> (avail + off)) & 1);
+                    dbits++;
+                    if (dbits >= 8) {
+                        uart_puthex8(dbyte);
+                        uart_putchar(' ');
+                        dbyte = 0; dbits = 0; dcount++;
+                    }
+                }
+            }
+            TRACE("\r\n");
+        }
+    }
 
     return FLOPPY_OK;
 }
