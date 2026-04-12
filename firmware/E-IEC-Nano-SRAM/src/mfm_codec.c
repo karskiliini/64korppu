@@ -241,30 +241,66 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
             if (raw_avail > 30) raw_avail = 30;
             pulse_num++;
 
-            /* Debug: detect 0x00 preamble (0x5555) and dump sync area */
+            /* Debug: detect preamble → extract bytes after it */
             {
                 uint16_t bottom = (uint16_t)(raw_bits & 0xFFFF);
 
                 if (bottom == 0x5555) {
                     preamble_count++;
-                    if (preamble_count >= 4 && sync_dump < 0 && sync_dumps_done < 3) {
-                        TRACE("\r\n[MFM] preamble @");
-                        uart_putdec((uint16_t)pulse_num);
-                        TRACE(": ");
-                        sync_dump = 30;  /* Dump next 30 values */
-                    }
                 } else {
-                    preamble_count = 0;
-                }
+                    if (preamble_count >= 4 && sync_dumps_done < 2) {
+                        /* Preamble just ended — extract next 10 bytes */
+                        TRACE("\r\n[MFM] preamble end @");
+                        uart_putdec((uint16_t)pulse_num);
+                        TRACE(" bytes: ");
 
-                if (sync_dump > 0) {
-                    uart_puthex16(bottom);
-                    uart_putchar(' ');
-                    sync_dump--;
-                    if (sync_dump == 0) {
+                        /* Use preamble alignment: data at position +1 */
+                        uint8_t dbyte = 0;
+                        uint8_t dbits = 0;
+                        uint8_t dcount = 0;
+                        /* First consume residual bits from current raw_avail */
+                        uint8_t tmp_avail = raw_avail;
+                        while (tmp_avail >= 2 && dcount < 200) {
+                            tmp_avail -= 2;
+                            dbyte = (dbyte << 1) | ((raw_bits >> (tmp_avail + 1)) & 1);
+                            dbits += 2;
+                            if (dbits >= 16) {
+                                uart_puthex8(dbyte);
+                                uart_putchar(' ');
+                                dbyte = 0; dbits = 0; dcount++;
+                                if ((dcount % 16) == 0) TRACE("\r\n");
+                            }
+                        }
+                        /* Read more from SRAM */
+                        while (dcount < 200 && sram_pos < capture_count) {
+                            uint8_t pk = sram_seq_read_byte();
+                            sram_pos++;
+                            for (int pp = 3; pp >= 0 && dcount < 200; pp--) {
+                                uint8_t c2 = (pk >> (pp * 2)) & 0x03;
+                                uint8_t add2;
+                                switch (c2) {
+                                    case 0: raw_bits = (raw_bits << 2) | 0x01; add2 = 2; break;
+                                    case 1: raw_bits = (raw_bits << 3) | 0x01; add2 = 3; break;
+                                    case 2: raw_bits = (raw_bits << 4) | 0x01; add2 = 4; break;
+                                    default: add2 = 0; break;
+                                }
+                                tmp_avail += add2;
+                                while (tmp_avail >= 2 && dcount < 200) {
+                                    tmp_avail -= 2;
+                                    dbyte = (dbyte << 1) | ((raw_bits >> (tmp_avail + 1)) & 1);
+                                    dbits += 2;
+                                    if (dbits >= 16) {
+                                        uart_puthex8(dbyte);
+                                        uart_putchar(' ');
+                                        dbyte = 0; dbits = 0; dcount++;
+                                    }
+                                }
+                            }
+                        }
                         TRACE("\r\n");
                         sync_dumps_done++;
                     }
+                    preamble_count = 0;
                 }
             }
 
