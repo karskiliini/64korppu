@@ -236,6 +236,7 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
     uint8_t field_pos = 0;
     uint16_t data_pos = 0;
     uint8_t raw_avail = 0;  /* Bits available in raw_bits */
+    uint32_t pulse_num = 0; /* Debug: pulse counter */
 
     sram_begin_seq_read(SRAM_MFM_TRACK);
     uint32_t sram_pos = 0;
@@ -259,17 +260,37 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
 
             /* Cap raw_avail to prevent overflow (32-bit holds max 32 bits) */
             if (raw_avail > 30) raw_avail = 30;
+            pulse_num++;
+
+            /* Debug: dump raw_bits periodically + near-sync detection */
+            if (pulse_num <= 5 || (pulse_num % 5000) == 0) {
+                TRACE("[MFM] #");
+                uart_putdec((uint16_t)pulse_num);
+                TRACE(" raw=0x");
+                uart_puthex16((uint16_t)(raw_bits & 0xFFFF));
+                TRACE(" avail=");
+                uart_putdec(raw_avail);
+                TRACE("\r\n");
+            }
 
             if (!reading_id && !reading_data) {
                 /* Phase 1: scan for raw sync pattern 0x4489 */
                 if ((raw_bits & 0xFFFF) == MFM_RAW_SYNC) {
                     sync_count++;
+                    TRACE("[MFM] SYNC! count=");
+                    uart_putdec(sync_count);
+                    TRACE(" at pulse ");
+                    uart_putdec((uint16_t)pulse_num);
+                    TRACE("\r\n");
                     if (sync_count >= 3) {
                         /* 3x sync found — next byte is address mark.
                          * Consume the sync bits so extraction starts fresh. */
                         raw_avail = 0;
                         uint8_t mark = mfm_extract_byte(&sram_pos, end_pos,
                                                          &raw_bits, &raw_avail);
+                        TRACE("[MFM] mark=0x");
+                        uart_puthex8(mark);
+                        TRACE("\r\n");
                         if (mark == MFM_IDAM) {
                             reading_id = true;
                             field_pos = 0;
