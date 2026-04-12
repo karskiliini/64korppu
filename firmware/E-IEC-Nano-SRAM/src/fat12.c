@@ -195,6 +195,10 @@ void fat12_unmount(void) {
     }
 }
 
+bool fat12_is_mounted(void) {
+    return state.mounted;
+}
+
 /* ---- Directory operations ---- */
 
 int fat12_find_file(const char *name, const char *ext, fat12_dirent_t *entry) {

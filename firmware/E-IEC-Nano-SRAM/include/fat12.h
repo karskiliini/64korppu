@@ -115,6 +115,7 @@ typedef struct {
 
 int fat12_mount(void);
 void fat12_unmount(void);
+bool fat12_is_mounted(void);
 uint16_t fat12_read_fat_entry(uint16_t cluster);
 void fat12_write_fat_entry(uint16_t cluster, uint16_t value);
 int fat12_flush_fat(void);

@@ -195,6 +195,13 @@ void cbm_dos_open(uint8_t sa, const char *filename, uint8_t len) {
     char ext3[4] = {0};
 
     if (sa == IEC_SA_LOAD || sa == IEC_SA_SAVE) {
+        /* Check if disk is mounted */
+        if (!fat12_is_mounted()) {
+            TRACE("[DOS] DRIVE NOT READY\r\n");
+            iec_set_error(CBM_ERR_DRIVE_NOT_READY, "DRIVE NOT READY", 0, 0);
+            return;
+        }
+
         /* Directory listing? */
         if (sa == IEC_SA_LOAD && len == 1 && filename[0] == '$') {
             TRACE("[DOS] dir listing\r\n");

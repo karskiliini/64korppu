@@ -282,6 +282,7 @@ void iec_service(void) {
             TRACE("[IEC] FAT12 OK\r\n");
         } else {
             TRACE("[IEC] no disk\r\n");
+            iec_set_error(CBM_ERR_DRIVE_NOT_READY, "DRIVE NOT READY", 0, 0);
             led_debug_blink(DBG_NO_DISK);
         }
 
@@ -310,6 +311,11 @@ void iec_service(void) {
                     device.state = IEC_STATE_IDLE;
                     iec_release_all();
                 }
+            } else {
+                /* No data to send — release bus so C64 doesn't hang */
+                TRACE("[IEC] talk: no data, release\r\n");
+                device.state = IEC_STATE_IDLE;
+                iec_release_all();
             }
         }
         return;

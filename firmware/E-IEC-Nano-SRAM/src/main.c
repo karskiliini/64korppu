@@ -188,6 +188,7 @@ int main(void) {
         TRACE("FAT12 OK\r\n");
     } else {
         TRACE("No disk\r\n");
+        iec_set_error(CBM_ERR_DRIVE_NOT_READY, "DRIVE NOT READY", 0, 0);
         led_debug_blink(DBG_NO_DISK);
     }
 
