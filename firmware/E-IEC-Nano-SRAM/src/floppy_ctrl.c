@@ -2,6 +2,7 @@
 #include "config.h"
 #include "shiftreg.h"
 #include "mfm_codec.h"
+#include "iec_protocol.h"
 #include "uart.h"
 
 #ifdef __AVR__
@@ -76,7 +77,11 @@ void floppy_motor_on(void) {
         TRACE("[FLP] motor ON, spin-up...\r\n");
         shiftreg_assert_bit(SR_BIT_MOTEA);
         shiftreg_assert_bit(SR_BIT_MOTOR);
-        _delay_ms(FLOPPY_MOTOR_SPIN_MS);
+        /* Service IEC during 500ms spin-up wait */
+        for (uint16_t i = 0; i < FLOPPY_MOTOR_SPIN_MS; i++) {
+            _delay_ms(1);
+            iec_poll();
+        }
         state.motor_on = true;
         PORTB |= (1 << FLOPPY_LED_PIN);  /* LED on */
         TRACE("[FLP] motor ON done\r\n");
@@ -114,7 +119,9 @@ int floppy_recalibrate(void) {
             /* /TRK00 active low - we're at track 0 */
             state.current_track = 0;
             state.initialized = true;
-            _delay_ms(FLOPPY_STEP_SETTLE_MS);
+            for (uint8_t d = 0; d < FLOPPY_STEP_SETTLE_MS; d++) {
+                _delay_ms(1); iec_poll();
+            }
             TRACE("[FLP] TRK00 found after ");
             uart_putdec(i);
             TRACE(" steps\r\n");
@@ -184,7 +191,9 @@ int floppy_seek(uint8_t track) {
         }
     }
 
-    _delay_ms(FLOPPY_STEP_SETTLE_MS);
+    for (uint8_t d = 0; d < FLOPPY_STEP_SETTLE_MS; d++) {
+        _delay_ms(1); iec_poll();
+    }
     return FLOPPY_OK;
 }
 

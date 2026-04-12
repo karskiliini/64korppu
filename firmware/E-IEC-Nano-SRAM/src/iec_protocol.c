@@ -25,13 +25,26 @@
  */
 
 static iec_device_t device = {0};
+static volatile bool atn_pending = false;
 
 /* Pin manipulation macros */
 #define IEC_ASSERT(pin)   do { IEC_DDR |= (1 << (pin)); IEC_PORT &= ~(1 << (pin)); } while(0)
 #define IEC_RELEASE(pin)  do { IEC_DDR &= ~(1 << (pin)); IEC_PORT |= (1 << (pin)); } while(0)
 #define IEC_IS_LOW(pin)   (!(IEC_PINR & (1 << (pin))))
 
-/* Timing uses _delay_us busy loops in protocol functions */
+/*
+ * INT0 ISR: immediate ATN acknowledge.
+ *
+ * When C64 asserts ATN, this ISR fires within ~1µs and pulls DATA low.
+ * This tells C64 "device #8 is present on the bus" and prevents
+ * "?DEVICE NOT PRESENT" errors even during blocking floppy operations.
+ *
+ * The full IEC command handling happens later in iec_service() or iec_poll().
+ */
+ISR(INT0_vect) {
+    IEC_ASSERT(IEC_PIN_DATA);
+    atn_pending = true;
+}
 
 void iec_init(uint8_t device_num) {
     TRACE("[IEC] init dev #");
@@ -40,12 +53,19 @@ void iec_init(uint8_t device_num) {
 
     device.device_number = device_num;
     device.state = IEC_STATE_IDLE;
+    atn_pending = false;
 
     /* All IEC pins as inputs with pull-ups */
     IEC_DDR &= ~((1 << IEC_PIN_ATN) | (1 << IEC_PIN_CLK) |
                   (1 << IEC_PIN_DATA) | (1 << IEC_PIN_RESET));
     IEC_PORT |= (1 << IEC_PIN_ATN) | (1 << IEC_PIN_CLK) |
                 (1 << IEC_PIN_DATA) | (1 << IEC_PIN_RESET);
+
+    /* INT0 (ATN on PD2): falling edge trigger */
+    EICRA = (EICRA & ~((1 << ISC01) | (1 << ISC00))) |
+            (1 << ISC01);   /* Falling edge */
+    EIFR  = (1 << INTF0);  /* Clear pending */
+    EIMSK |= (1 << INT0);  /* Enable INT0 */
 
     /* Read initial bus state */
     uint8_t pins = IEC_PINR;
@@ -61,6 +81,19 @@ void iec_init(uint8_t device_num) {
 
     memset(device.channels, 0, sizeof(device.channels));
     iec_set_error(CBM_ERR_DOS_MISMATCH, CBM_DOS_ID, 0, 0);
+}
+
+/*
+ * Lightweight IEC poll: call from inside blocking waits (motor spin-up,
+ * step settle, etc.). If ATN was acknowledged by INT0 ISR, process the
+ * full IEC command sequence now while we have CPU time.
+ */
+void iec_poll(void) {
+    if (atn_pending) {
+        atn_pending = false;
+        TRACE("[IEC] poll: ATN during wait\r\n");
+        iec_service();
+    }
 }
 
 void iec_release_all(void) {

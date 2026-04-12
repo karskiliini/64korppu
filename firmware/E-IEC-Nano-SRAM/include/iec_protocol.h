@@ -47,6 +47,7 @@ typedef struct {
 
 void iec_init(uint8_t device_num);
 void iec_service(void);
+void iec_poll(void);   /* Lightweight: call from blocking waits */
 void iec_release_all(void);
 
 bool iec_receive_byte_atn(uint8_t *byte);
