@@ -95,7 +95,6 @@ void floppy_motor_on(void) {
 
         for (ms = 0; ms < 1000 && !ready; ms++) {
             _delay_ms(1);
-            iec_poll();
 
             /* Check for ICP events */
             if (TIFR1 & (1 << ICF1)) {
