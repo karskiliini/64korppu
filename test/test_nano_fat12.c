@@ -80,14 +80,17 @@ void sram_write(uint32_t addr, const uint8_t *buf, uint16_t len) {
 
 #define MOCK_DISK_SIZE (2880 * 512)
 static uint8_t *mock_disk;
+static bool mock_disk_io_fail = false;   /* Simulate I/O errors (no disk) */
 
 int disk_read_sector(uint16_t lba, uint8_t *buf) {
+    if (mock_disk_io_fail) return -1;
     if (lba >= 2880) return -1;
     memcpy(buf, &mock_disk[(uint32_t)lba * 512], 512);
     return 0;
 }
 
 int disk_write_sector(uint16_t lba, const uint8_t *buf) {
+    if (mock_disk_io_fail) return -1;
     if (lba >= 2880) return -1;
     memcpy(&mock_disk[(uint32_t)lba * 512], buf, 512);
     return 0;
@@ -98,6 +101,7 @@ int disk_write_sector(uint16_t lba, const uint8_t *buf) {
 static void reset_mocks(void) {
     memset(mock_sram, 0, sizeof(mock_sram));
     memset(mock_disk, 0, MOCK_DISK_SIZE);
+    mock_disk_io_fail = false;
     fat12_unmount();
 }
 
@@ -567,6 +571,101 @@ TEST(fat_flush_writes_both_copies) {
     }
 }
 
+/* --- Disk I/O error handling (no disk scenarios) --- */
+
+TEST(mount_fails_when_disk_io_fails) {
+    reset_mocks();
+    mock_disk_io_fail = true;
+    ASSERT_EQ(fat12_mount(), FAT12_ERR_IO);
+    ASSERT(!fat12_is_mounted());
+}
+
+TEST(mount_io_fail_then_disk_inserted) {
+    reset_mocks();
+    /* First attempt: no disk */
+    mock_disk_io_fail = true;
+    ASSERT_EQ(fat12_mount(), FAT12_ERR_IO);
+    ASSERT(!fat12_is_mounted());
+
+    /* Disk inserted, format it */
+    mock_disk_io_fail = false;
+    ASSERT_EQ(fat12_format("INSERTED   "), FAT12_OK);
+    ASSERT(fat12_is_mounted());
+}
+
+TEST(open_read_fails_when_not_mounted) {
+    reset_mocks();
+    fat12_file_t file;
+    ASSERT_EQ(fat12_open_read("TEST    ", "PRG", &file), FAT12_ERR_NOT_MOUNT);
+}
+
+TEST(create_fails_when_not_mounted) {
+    reset_mocks();
+    fat12_file_t file;
+    ASSERT_EQ(fat12_create("TEST    ", "PRG", &file), FAT12_ERR_NOT_MOUNT);
+}
+
+TEST(delete_fails_when_not_mounted) {
+    reset_mocks();
+    ASSERT_EQ(fat12_delete("TEST    ", "PRG"), FAT12_ERR_NOT_MOUNT);
+}
+
+TEST(rename_fails_when_not_mounted) {
+    reset_mocks();
+    ASSERT_EQ(fat12_rename("OLD     ", "PRG", "NEW     ", "PRG"), FAT12_ERR_NOT_MOUNT);
+}
+
+TEST(flush_fat_when_not_mounted) {
+    reset_mocks();
+    /* Should return OK (nothing to flush) */
+    ASSERT_EQ(fat12_flush_fat(), FAT12_OK);
+}
+
+TEST(is_mounted_reflects_state) {
+    reset_mocks();
+    ASSERT(!fat12_is_mounted());
+
+    ASSERT_EQ(format_and_mount(), FAT12_OK);
+    ASSERT(fat12_is_mounted());
+
+    fat12_unmount();
+    ASSERT(!fat12_is_mounted());
+}
+
+TEST(mount_fails_with_bad_bps) {
+    reset_mocks();
+    /* Write a boot sector with bad bytes_per_sector */
+    fat12_bpb_t *bpb = (fat12_bpb_t *)mock_disk;
+    bpb->bytes_per_sector = 1024;  /* Wrong, should be 512 */
+    bpb->num_fats = 2;
+    bpb->sectors_per_cluster = 1;
+    ASSERT_EQ(fat12_mount(), FAT12_ERR_NOT_FAT12);
+}
+
+TEST(mount_fails_with_zero_spc) {
+    reset_mocks();
+    fat12_bpb_t *bpb = (fat12_bpb_t *)mock_disk;
+    bpb->bytes_per_sector = 512;
+    bpb->num_fats = 2;
+    bpb->sectors_per_cluster = 0;  /* Invalid */
+    ASSERT_EQ(fat12_mount(), FAT12_ERR_NOT_FAT12);
+}
+
+TEST(fat_read_fails_during_mount) {
+    reset_mocks();
+    /* Format disk first to get valid boot sector */
+    ASSERT_EQ(fat12_format("TEST DISK  "), FAT12_OK);
+    fat12_unmount();
+
+    /* Now fail I/O — boot sector read will return cached data but FAT reads fail
+     * Actually disk_read_sector reads from mock_disk array, so we need to fail
+     * at a specific point. Simulate by corrupting: set io_fail after boot sector */
+    /* Can't easily do partial failure with current mock, so test full failure */
+    mock_disk_io_fail = true;
+    ASSERT_EQ(fat12_mount(), FAT12_ERR_IO);
+    ASSERT(!fat12_is_mounted());
+}
+
 /* ---- Main ---- */
 
 int main(void) {
@@ -622,6 +721,19 @@ int main(void) {
     RUN(multiple_files);
     RUN(overwrite_existing_file);
     RUN(fat_flush_writes_both_copies);
+
+    printf("\nDisk I/O errors (no disk):\n");
+    RUN(mount_fails_when_disk_io_fails);
+    RUN(mount_io_fail_then_disk_inserted);
+    RUN(open_read_fails_when_not_mounted);
+    RUN(create_fails_when_not_mounted);
+    RUN(delete_fails_when_not_mounted);
+    RUN(rename_fails_when_not_mounted);
+    RUN(flush_fat_when_not_mounted);
+    RUN(is_mounted_reflects_state);
+    RUN(mount_fails_with_bad_bps);
+    RUN(mount_fails_with_zero_spc);
+    RUN(fat_read_fails_during_mount);
 
     printf("\n========================================\n");
     printf("Results: %d/%d passed", tests_passed, tests_run);

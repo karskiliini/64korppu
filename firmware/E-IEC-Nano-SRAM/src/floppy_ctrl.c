@@ -62,7 +62,7 @@ void floppy_init(void) {
     state.current_track = 0;
     state.current_side = 0;
     state.motor_on = false;
-    state.disk_present = true;
+    state.disk_present = false;
     state.write_protected = false;
     state.initialized = false;
 
@@ -124,6 +124,30 @@ int floppy_recalibrate(void) {
     }
     TRACE("[FLP] ERR: TRK00 not found after 85 steps!\r\n");
     return FLOPPY_ERR_NO_TRK0;
+}
+
+bool floppy_check_disk(void) {
+    /*
+     * Read /DSKCHG (A2) after head has stepped (recalibrate).
+     * /DSKCHG is active-low:
+     *   LOW  = disk changed / no disk present
+     *   HIGH = disk present (cleared by step pulse)
+     */
+    bool present = !!(FLOPPY_IN_PINR & (1 << FLOPPY_DSKCHG_PIN));
+    state.disk_present = present;
+    state.write_protected = !(FLOPPY_IN_PINR & (1 << FLOPPY_WPT_PIN));
+
+    TRACE("[FLP] disk check: DSKCHG=");
+    uart_putchar(present ? 'H' : 'L');
+    TRACE(" WPT=");
+    uart_putchar(state.write_protected ? 'Y' : 'N');
+    if (present) {
+        TRACE(" -> disk PRESENT\r\n");
+    } else {
+        TRACE(" -> disk NOT PRESENT\r\n");
+    }
+
+    return present;
 }
 
 int floppy_seek(uint8_t track) {

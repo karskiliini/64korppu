@@ -174,11 +174,22 @@ int main(void) {
 
     floppy_motor_on();
     int rc = floppy_recalibrate();
-    if (rc == FLOPPY_OK) {
-        TRACE("Drive OK\r\n");
-    } else {
+    if (rc != FLOPPY_OK) {
         TRACE("No drive!\r\n");
+        iec_set_error(CBM_ERR_DRIVE_NOT_READY, "DRIVE NOT READY", 0, 0);
         led_debug_blink(DBG_FLOPPY_ERROR);
+        floppy_motor_off();
+        goto boot_done;
+    }
+    TRACE("Drive OK\r\n");
+
+    /* Check if disk is present via /DSKCHG */
+    if (!floppy_check_disk()) {
+        TRACE("No disk in drive\r\n");
+        iec_set_error(CBM_ERR_DRIVE_NOT_READY, "DRIVE NOT READY", 0, 0);
+        led_debug_blink(DBG_NO_DISK);
+        floppy_motor_off();
+        goto boot_done;
     }
 
     /* Mount FAT12 */
@@ -187,13 +198,15 @@ int main(void) {
     if (rc == FAT12_OK) {
         TRACE("FAT12 OK\r\n");
     } else {
-        TRACE("No disk\r\n");
+        TRACE("Mount failed\r\n");
         iec_set_error(CBM_ERR_DRIVE_NOT_READY, "DRIVE NOT READY", 0, 0);
         led_debug_blink(DBG_NO_DISK);
     }
 
     /* Motor off after init — read/write will restart it on demand */
     floppy_motor_off();
+
+boot_done:
 
     TRACE("Ready.\r\n");
     led_debug_blink(DBG_BOOT_OK);

@@ -26,6 +26,7 @@ void floppy_init(void);
 void floppy_motor_on(void);
 void floppy_motor_off(void);
 int floppy_recalibrate(void);
+bool floppy_check_disk(void);
 int floppy_seek(uint8_t track);
 void floppy_select_side(uint8_t side);
 int floppy_read_sector(uint8_t track, uint8_t side, uint8_t sector, uint8_t *buf);

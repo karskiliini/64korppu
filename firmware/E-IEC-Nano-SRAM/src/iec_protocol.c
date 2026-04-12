@@ -269,11 +269,23 @@ void iec_service(void) {
         /* Full floppy reinit (same as boot) */
         floppy_motor_on();
         int rc = floppy_recalibrate();
-        if (rc == FLOPPY_OK) {
-            TRACE("[IEC] drive OK\r\n");
-        } else {
+        if (rc != FLOPPY_OK) {
             TRACE("[IEC] no drive!\r\n");
+            iec_set_error(CBM_ERR_DRIVE_NOT_READY, "DRIVE NOT READY", 0, 0);
             led_debug_blink(DBG_FLOPPY_ERROR);
+            floppy_motor_off();
+            TRACE("[IEC] reinit done (no drive)\r\n");
+            return;
+        }
+        TRACE("[IEC] drive OK\r\n");
+
+        if (!floppy_check_disk()) {
+            TRACE("[IEC] no disk in drive\r\n");
+            iec_set_error(CBM_ERR_DRIVE_NOT_READY, "DRIVE NOT READY", 0, 0);
+            led_debug_blink(DBG_NO_DISK);
+            floppy_motor_off();
+            TRACE("[IEC] reinit done (no disk)\r\n");
+            return;
         }
 
         TRACE("[IEC] mount FAT12...\r\n");
@@ -281,7 +293,7 @@ void iec_service(void) {
         if (rc == FAT12_OK) {
             TRACE("[IEC] FAT12 OK\r\n");
         } else {
-            TRACE("[IEC] no disk\r\n");
+            TRACE("[IEC] mount failed\r\n");
             iec_set_error(CBM_ERR_DRIVE_NOT_READY, "DRIVE NOT READY", 0, 0);
             led_debug_blink(DBG_NO_DISK);
         }
