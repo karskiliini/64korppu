@@ -337,19 +337,19 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
                             test = (test << 1) | ((raw_bits >> pos) & 1);
                         }
                         if (test == MFM_IDAM) {
-                            if (pulse_num < 50000) {
-                                TRACE("[MFM] IDAM found @");
-                                uart_putdec((uint16_t)pulse_num);
-                                TRACE(" off=");
-                                uart_putdec(off);
-                                TRACE("\r\n");
-                            }
-                            /* Lock to this alignment */
+                            /* Peek next 4 bytes to validate sector ID */
+                            /* Extract T, S, R, N at this alignment */
+                            uint8_t id[4];
+                            bool valid = true;
+                            uint32_t peek_raw = raw_bits;
+                            /* We need ~80 more MFM bits for 4 bytes.
+                             * For now, just lock alignment and validate
+                             * in READ_ID state. */
                             state = DEC_READ_ID;
                             field_pos = 0;
                             byte_val = 0;
                             byte_bits = 0;
-                            raw_avail = off;  /* Remaining bits at this alignment */
+                            raw_avail = off;
                             break;
                         }
                     }
@@ -386,22 +386,29 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
                         } else if (state == DEC_READ_ID) {
                             field_bytes[field_pos++] = byte_val;
                             if (field_pos >= 4) {
-                                TRACE("[MFM] IDAM: T=");
-                                uart_putdec(field_bytes[0]);
-                                TRACE(" S=");
-                                uart_putdec(field_bytes[1]);
-                                TRACE(" R=");
-                                uart_putdec(field_bytes[2]);
-                                TRACE(" N=");
-                                uart_putdec(field_bytes[3]);
-                                if (field_bytes[2] == sector) {
-                                    TRACE(" MATCH!\r\n");
-                                    found_sector = true;
-                                } else {
+                                uint8_t t = field_bytes[0];
+                                uint8_t s = field_bytes[1];
+                                uint8_t r = field_bytes[2];
+                                uint8_t n = field_bytes[3];
+
+                                /* Validate: T=0-79, S=0-1, R=1-18, N=2 */
+                                if (t < 80 && s <= 1 && r >= 1 && r <= 18 && n == 2) {
+                                    TRACE("[MFM] VALID IDAM: T=");
+                                    uart_putdec(t);
+                                    TRACE(" S=");
+                                    uart_putdec(s);
+                                    TRACE(" R=");
+                                    uart_putdec(r);
+                                    TRACE(" @");
+                                    uart_putdec((uint16_t)pulse_num);
                                     TRACE("\r\n");
+                                    if (r == sector) {
+                                        TRACE("[MFM] SECTOR MATCH!\r\n");
+                                        found_sector = true;
+                                    }
                                 }
+                                /* Invalid or non-matching: resume scanning */
                                 state = DEC_SCAN_SYNC;
-                                sync_count = 0;
                             }
                         } else if (state == DEC_READ_DATA) {
                             data_out[data_pos++] = byte_val;
