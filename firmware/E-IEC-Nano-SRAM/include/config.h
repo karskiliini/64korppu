@@ -150,10 +150,18 @@
 
 /* At 16MHz timer, HD 500kbps: bit cell = 2µs = 32 ticks */
 #define MFM_TICKS_PER_CELL_HD    32
-/* Pulse classification thresholds (Timer1 ticks at 16MHz) */
-#define MFM_THRESHOLD_SHORT      80     /* < 80: 2T (short) */
-#define MFM_THRESHOLD_MEDIUM    112     /* < 112: 3T (medium) */
-#define MFM_THRESHOLD_LONG      160     /* < 160: 4T (long) */
+/*
+ * Pulse classification thresholds (Timer1 ticks at 16MHz).
+ *
+ * Nominal HD 500kbps intervals: 2T=64, 3T=96, 4T=128 ticks.
+ * Pull-up delay compensation: 10kΩ pull-up + cable capacitance
+ * adds ~28 ticks to each measured interval. Thresholds are shifted
+ * accordingly. After R12 is changed to 1kΩ, revert to nominal values.
+ */
+#define MFM_PULLUP_DELAY         28     /* Ticks added by 10kΩ pull-up */
+#define MFM_THRESHOLD_SHORT     (80  + MFM_PULLUP_DELAY)   /* < 108: 2T */
+#define MFM_THRESHOLD_MEDIUM    (112 + MFM_PULLUP_DELAY)   /* < 140: 3T */
+#define MFM_THRESHOLD_LONG      (160 + MFM_PULLUP_DELAY)   /* < 188: 4T */
 
 /* MFM address marks */
 #define MFM_SYNC_BYTE   0xA1
