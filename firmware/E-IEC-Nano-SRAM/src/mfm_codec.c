@@ -160,57 +160,21 @@ int mfm_capture_track(void) {
 
 /*
  * MFM raw sync pattern for 0xA1 with missing clock bit.
- * Normal 0xA1 MFM: 0100_0100_1010_1001 = 0x44A9
- * Sync 0xA1 MFM:   0100_0100_1000_1001 = 0x4489
- *
- * Detection: scan the raw MFM bitstream (shift_reg) for this pattern.
- * When found, we know the exact bit alignment for data extraction.
- * This is how real MFM controllers (WD1770 etc.) work.
+ * Sync 0xA1 MFM: 0100_0100_1000_1001 = 0x4489
  */
 #define MFM_RAW_SYNC  0x4489
 
 /*
- * Extract one data byte from the MFM bitstream.
- * After sync detection, shift_reg is aligned so that data bits
- * are at odd positions (bit 15=C, 14=D, 13=C, 12=D, ...).
- * We need 16 raw MFM bits (8 clock+data pairs) = 1 data byte.
+ * Decode state machine.
+ * All data flows through one pulse-processing loop — no separate
+ * function calls that could desync the SRAM read position.
  */
-static uint8_t mfm_extract_byte(uint32_t *sram_pos, uint32_t end_pos,
-                                 uint32_t *raw_bits, uint8_t *raw_avail) {
-    uint8_t byte_val = 0;
-    uint8_t bits_needed = 16;  /* 16 MFM bits = 8 data bits */
-
-    while (bits_needed > 0 && *sram_pos < end_pos) {
-        /* Refill raw bit buffer from packed pulse data */
-        while (*raw_avail < bits_needed && *sram_pos < end_pos) {
-            uint8_t packed = sram_seq_read_byte();
-            (*sram_pos)++;
-
-            for (int p = 3; p >= 0; p--) {
-                uint8_t code = (packed >> (p * 2)) & 0x03;
-                uint8_t add;
-                switch (code) {
-                    case 0: *raw_bits = (*raw_bits << 2) | 0x01; add = 2; break;
-                    case 1: *raw_bits = (*raw_bits << 3) | 0x01; add = 3; break;
-                    case 2: *raw_bits = (*raw_bits << 4) | 0x01; add = 4; break;
-                    default: *raw_bits = 0; *raw_avail = 0; add = 0; break;
-                }
-                *raw_avail += add;
-            }
-        }
-
-        /* Extract data bits: every other bit (odd positions = data) */
-        while (bits_needed > 0 && *raw_avail >= 2) {
-            *raw_avail -= 2;
-            /* After sync alignment: data bit is at even positions (0,2,4...) */
-            uint8_t data_bit = (*raw_bits >> *raw_avail) & 0x01;
-            byte_val = (byte_val << 1) | data_bit;
-            bits_needed -= 2;
-        }
-    }
-
-    return byte_val;
-}
+typedef enum {
+    DEC_SCAN_SYNC,   /* Looking for 0x4489 raw pattern */
+    DEC_READ_MARK,   /* Extracting address mark byte after 3x sync */
+    DEC_READ_ID,     /* Extracting 4 sector ID bytes */
+    DEC_READ_DATA,   /* Extracting 512 data bytes */
+} decode_state_t;
 
 int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
     TRACE("[MFM] decode sector ");
@@ -219,32 +183,23 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
     uart_putdec((uint16_t)capture_count);
     TRACE(" packs\r\n");
 
-    /*
-     * Phase 1: Scan raw MFM bitstream for sync pattern 0x4489.
-     * Phase 2: After 3x sync, read address mark + ID/data fields.
-     *
-     * The key insight: sync detection works on the RAW MFM bits
-     * (shift_reg), not on decoded data bytes. This automatically
-     * establishes correct bit alignment for subsequent extraction.
-     */
-    uint32_t raw_bits = 0;  /* Raw MFM bit accumulator (32-bit for headroom) */
+    uint32_t raw_bits = 0;
+    uint8_t raw_avail = 0;
     uint8_t sync_count = 0;
     bool found_sector = false;
-    bool reading_id = false;
-    bool reading_data = false;
+
+    decode_state_t state = DEC_SCAN_SYNC;
+    uint8_t byte_val = 0;
+    uint8_t byte_bits = 0;   /* MFM bits consumed for current byte (0..16) */
     uint8_t field_bytes[4];
     uint8_t field_pos = 0;
     uint16_t data_pos = 0;
-    uint8_t raw_avail = 0;  /* Bits available in raw_bits */
-    uint32_t pulse_num = 0; /* Debug: pulse counter */
+    uint32_t pulse_num = 0;
 
     sram_begin_seq_read(SRAM_MFM_TRACK);
-    uint32_t sram_pos = 0;
-    uint32_t end_pos = capture_count;
 
-    while (sram_pos < end_pos) {
+    for (uint32_t sram_pos = 0; sram_pos < capture_count; sram_pos++) {
         uint8_t packed = sram_seq_read_byte();
-        sram_pos++;
 
         for (int p = 3; p >= 0; p--) {
             uint8_t code = (packed >> (p * 2)) & 0x03;
@@ -254,15 +209,14 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
                 case 1: raw_bits = (raw_bits << 3) | 0x01; raw_avail += 3; break;
                 case 2: raw_bits = (raw_bits << 4) | 0x01; raw_avail += 4; break;
                 default: raw_bits = 0; raw_avail = 0;
-                         sync_count = 0; reading_id = false; reading_data = false;
+                         sync_count = 0; state = DEC_SCAN_SYNC;
+                         byte_bits = 0;
                          continue;
             }
-
-            /* Cap raw_avail to prevent overflow (32-bit holds max 32 bits) */
             if (raw_avail > 30) raw_avail = 30;
             pulse_num++;
 
-            /* Debug: dump every raw_bits for first 200 pulses */
+            /* Debug: first 200 pulses */
             if (pulse_num <= 200) {
                 uart_puthex16((uint16_t)(raw_bits & 0xFFFF));
                 uart_putchar(' ');
@@ -271,75 +225,86 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
                 TRACE("\r\n[MFM] ...scanning...\r\n");
             }
 
-            if (!reading_id && !reading_data) {
-                /* Phase 1: scan for raw sync pattern 0x4489 */
+            if (state == DEC_SCAN_SYNC) {
+                /* Check raw MFM pattern for sync A1 */
                 if ((raw_bits & 0xFFFF) == MFM_RAW_SYNC) {
                     sync_count++;
-                    TRACE("[MFM] SYNC! count=");
-                    uart_putdec(sync_count);
-                    TRACE(" at pulse ");
-                    uart_putdec((uint16_t)pulse_num);
-                    TRACE("\r\n");
-                    if (sync_count >= 3) {
-                        /* 3x sync found — next byte is address mark.
-                         * Consume the sync bits so extraction starts fresh. */
-                        raw_avail = 0;
-                        uint8_t mark = mfm_extract_byte(&sram_pos, end_pos,
-                                                         &raw_bits, &raw_avail);
-                        TRACE("[MFM] mark=0x");
-                        uart_puthex8(mark);
+                    if (pulse_num < 50000) {
+                        TRACE("[MFM] SYNC! count=");
+                        uart_putdec(sync_count);
+                        TRACE(" @");
+                        uart_putdec((uint16_t)pulse_num);
                         TRACE("\r\n");
-                        if (mark == MFM_IDAM) {
-                            reading_id = true;
-                            field_pos = 0;
-                        } else if (mark == MFM_DAM && found_sector) {
-                            reading_data = true;
-                            data_pos = 0;
-                        } else {
-                            sync_count = 0;
-                        }
+                    }
+                    if (sync_count >= 3) {
+                        /* Start extracting mark byte.
+                         * Reset extraction — sync consumed all alignment bits */
+                        state = DEC_READ_MARK;
+                        byte_val = 0;
+                        byte_bits = 0;
+                        raw_avail = 0;  /* Bits before this point are sync */
                     }
                 }
-            }
-        }
+            } else {
+                /* States DEC_READ_MARK / DEC_READ_ID / DEC_READ_DATA:
+                 * Extract data bits from raw MFM stream.
+                 * Every 2 raw MFM bits = 1 data bit (clock+data pair).
+                 * After sync alignment, bit at raw_avail pos = data bit. */
+                while (raw_avail >= 2) {
+                    raw_avail -= 2;
+                    uint8_t data_bit = (raw_bits >> raw_avail) & 0x01;
+                    byte_val = (byte_val << 1) | data_bit;
+                    byte_bits += 2;
 
-        /* Phase 2: extract field bytes (after sync+mark detected) */
-        if (reading_id) {
-            while (field_pos < 4 && sram_pos < end_pos) {
-                field_bytes[field_pos] = mfm_extract_byte(&sram_pos, end_pos,
-                                                           &raw_bits, &raw_avail);
-                field_pos++;
-            }
-            if (field_pos >= 4) {
-                TRACE("[MFM] IDAM: T=");
-                uart_putdec(field_bytes[0]);
-                TRACE(" S=");
-                uart_putdec(field_bytes[1]);
-                TRACE(" R=");
-                uart_putdec(field_bytes[2]);
-                TRACE(" N=");
-                uart_putdec(field_bytes[3]);
-                if (field_bytes[2] == sector) {
-                    TRACE(" MATCH!\r\n");
-                    found_sector = true;
-                } else {
-                    TRACE("\r\n");
+                    if (byte_bits >= 16) {
+                        /* Complete byte extracted */
+                        byte_bits = 0;
+
+                        if (state == DEC_READ_MARK) {
+                            TRACE("[MFM] mark=0x");
+                            uart_puthex8(byte_val);
+                            TRACE("\r\n");
+                            if (byte_val == MFM_IDAM) {
+                                state = DEC_READ_ID;
+                                field_pos = 0;
+                            } else if (byte_val == MFM_DAM && found_sector) {
+                                state = DEC_READ_DATA;
+                                data_pos = 0;
+                            } else {
+                                state = DEC_SCAN_SYNC;
+                                sync_count = 0;
+                            }
+                        } else if (state == DEC_READ_ID) {
+                            field_bytes[field_pos++] = byte_val;
+                            if (field_pos >= 4) {
+                                TRACE("[MFM] IDAM: T=");
+                                uart_putdec(field_bytes[0]);
+                                TRACE(" S=");
+                                uart_putdec(field_bytes[1]);
+                                TRACE(" R=");
+                                uart_putdec(field_bytes[2]);
+                                TRACE(" N=");
+                                uart_putdec(field_bytes[3]);
+                                if (field_bytes[2] == sector) {
+                                    TRACE(" MATCH!\r\n");
+                                    found_sector = true;
+                                } else {
+                                    TRACE("\r\n");
+                                }
+                                state = DEC_SCAN_SYNC;
+                                sync_count = 0;
+                            }
+                        } else if (state == DEC_READ_DATA) {
+                            data_out[data_pos++] = byte_val;
+                            if (data_pos >= 512) {
+                                TRACE("[MFM] decode OK, 512 bytes\r\n");
+                                sram_end_seq();
+                                return 0;
+                            }
+                        }
+                        byte_val = 0;
+                    }
                 }
-                reading_id = false;
-                sync_count = 0;
-            }
-        }
-
-        if (reading_data) {
-            while (data_pos < 512 && sram_pos < end_pos) {
-                data_out[data_pos] = mfm_extract_byte(&sram_pos, end_pos,
-                                                       &raw_bits, &raw_avail);
-                data_pos++;
-            }
-            if (data_pos >= 512) {
-                TRACE("[MFM] decode OK, 512 bytes\r\n");
-                sram_end_seq();
-                return 0;
             }
         }
     }
