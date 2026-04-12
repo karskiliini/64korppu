@@ -1,6 +1,7 @@
 #include "mfm_codec.h"
 #include "config.h"
 #include "sram.h"
+#include "uart.h"
 
 #ifdef __AVR__
 
@@ -101,6 +102,8 @@ ISR(TIMER1_CAPT_vect) {
 }
 
 int mfm_capture_track(void) {
+    TRACE("[MFM] capture start\r\n");
+
     /* Initialize capture state */
     capture_count = 0;
     pulse_pack = 0;
@@ -133,7 +136,16 @@ int mfm_capture_track(void) {
     /* End sequential SRAM write */
     sram_end_seq();
 
-    if (timeout >= 500) return FLOPPY_ERR_TIMEOUT;
+    TRACE("[MFM] capture: ");
+    uart_putdec((uint16_t)capture_count);
+    TRACE(" packs, ");
+    uart_putdec(timeout);
+    TRACE("ms\r\n");
+
+    if (timeout >= 500) {
+        TRACE("[MFM] capture TIMEOUT!\r\n");
+        return FLOPPY_ERR_TIMEOUT;
+    }
     return FLOPPY_OK;
 }
 
@@ -155,19 +167,11 @@ int mfm_capture_track(void) {
  */
 
 int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
-    /*
-     * Simplified MFM sector decode from SRAM track buffer.
-     *
-     * Strategy:
-     * 1. Read packed pulse data from SRAM
-     * 2. Convert pulse codes to MFM bit transitions
-     * 3. Search for 0xA1 sync marks (missing clock)
-     * 4. Read IDAM + sector ID
-     * 5. If matching sector: skip gap, read DAM + 512 data bytes + CRC
-     *
-     * This is a basic implementation. Real hardware may need
-     * more robust sync detection and error recovery.
-     */
+    TRACE("[MFM] decode sector ");
+    uart_putdec(sector);
+    TRACE(", scan ");
+    uart_putdec((uint16_t)capture_count);
+    TRACE(" packs\r\n");
 
     /* Read entire captured track from SRAM into a reconstruction loop */
     uint32_t read_pos = SRAM_MFM_TRACK;
@@ -229,6 +233,7 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
                         }
                         if (data_pos >= 512) {
                             /* Done reading sector data */
+                            TRACE("[MFM] decode OK, 512 bytes\r\n");
                             sram_end_seq();
                             return 0;
                         }
@@ -236,8 +241,19 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
                         field_bytes[data_pos++] = byte_val;
                         if (data_pos >= 4) {
                             /* Got full sector ID */
+                            TRACE("[MFM] IDAM: T=");
+                            uart_putdec(field_bytes[0]);
+                            TRACE(" S=");
+                            uart_putdec(field_bytes[1]);
+                            TRACE(" R=");
+                            uart_putdec(field_bytes[2]);
+                            TRACE(" N=");
+                            uart_putdec(field_bytes[3]);
                             if (field_bytes[2] == sector) {
+                                TRACE(" MATCH!\r\n");
                                 found_sector = true;
+                            } else {
+                                TRACE("\r\n");
                             }
                             reading_id = false;
                             data_pos = 0;
@@ -264,6 +280,9 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
     }
 
     sram_end_seq();
+    TRACE("[MFM] decode FAIL: sector ");
+    uart_putdec(sector);
+    TRACE(" not found\r\n");
     return FLOPPY_ERR_NO_SECTOR;
 }
 

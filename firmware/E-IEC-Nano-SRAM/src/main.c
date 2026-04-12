@@ -2,10 +2,12 @@
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <avr/pgmspace.h>
 #include <util/delay.h>
 #include <string.h>
 
 #include "config.h"
+#include "uart.h"
 #include "sram.h"
 #include "shiftreg.h"
 #include "floppy_ctrl.h"
@@ -43,13 +45,41 @@
 int disk_read_sector(uint16_t lba, uint8_t *buf) {
     uint8_t track, side, sector;
     floppy_lba_to_chs(lba, &track, &side, &sector);
-    return floppy_read_sector(track, side, sector, buf);
+    TRACE("[DISK] read LBA=");
+    uart_putdec(lba);
+    TRACE(" T=");
+    uart_putdec(track);
+    TRACE(" S=");
+    uart_putdec(side);
+    TRACE(" R=");
+    uart_putdec(sector);
+    TRACE("\r\n");
+    int rc = floppy_read_sector(track, side, sector, buf);
+    TRACE("[DISK] read rc=");
+    uart_putdec((uint16_t)(rc < 0 ? -rc : rc));
+    if (rc < 0) TRACE(" ERR");
+    TRACE("\r\n");
+    return rc;
 }
 
 int disk_write_sector(uint16_t lba, const uint8_t *buf) {
     uint8_t track, side, sector;
     floppy_lba_to_chs(lba, &track, &side, &sector);
-    return floppy_write_sector(track, side, sector, (uint8_t *)buf);
+    TRACE("[DISK] write LBA=");
+    uart_putdec(lba);
+    TRACE(" T=");
+    uart_putdec(track);
+    TRACE(" S=");
+    uart_putdec(side);
+    TRACE(" R=");
+    uart_putdec(sector);
+    TRACE("\r\n");
+    int rc = floppy_write_sector(track, side, sector, (uint8_t *)buf);
+    TRACE("[DISK] write rc=");
+    uart_putdec((uint16_t)(rc < 0 ? -rc : rc));
+    if (rc < 0) TRACE(" ERR");
+    TRACE("\r\n");
+    return rc;
 }
 
 /*
@@ -73,29 +103,54 @@ void uart_puts(const char *s) {
     while (*s) uart_putchar(*s++);
 }
 
+void uart_puts_P(const char *s) {
+    char c;
+    while ((c = pgm_read_byte(s++))) uart_putchar(c);
+}
+
+static const char hex_chars[] PROGMEM = "0123456789ABCDEF";
+
+void uart_puthex8(uint8_t val) {
+    uart_putchar(pgm_read_byte(&hex_chars[val >> 4]));
+    uart_putchar(pgm_read_byte(&hex_chars[val & 0x0F]));
+}
+
+void uart_puthex16(uint16_t val) {
+    uart_puthex8(val >> 8);
+    uart_puthex8(val & 0xFF);
+}
+
+void uart_putdec(uint16_t val) {
+    char buf[6];
+    int i = 0;
+    if (val == 0) { uart_putchar('0'); return; }
+    while (val > 0) { buf[i++] = '0' + (val % 10); val /= 10; }
+    while (i > 0) uart_putchar(buf[--i]);
+}
+
 int main(void) {
     /* Disable interrupts during init */
     cli();
 
     uart_init();
-    uart_puts("\r\n=== 64korppu v1.0 (Nano+SRAM) ===\r\n");
+    TRACE("\r\n=== 64korppu v1.0 (Nano+SRAM) ===\r\n");
 
     /* Initialize LED debug (green D9, optional red A5) */
     led_debug_init();
 
     /* Initialize SPI and SRAM */
     sram_init();
-    uart_puts("SRAM OK\r\n");
+    TRACE("SRAM OK\r\n");
 
     /* Initialize shift register */
     shiftreg_init();
-    uart_puts("74HC595 OK\r\n");
+    TRACE("74HC595 OK\r\n");
 
     /* Initialize MFM codec (Timer1) */
     mfm_init();
 
     /* Initialize IEC bus EARLY — device responds on bus ASAP */
-    uart_puts("IEC device #8\r\n");
+    TRACE("IEC device #8\r\n");
     iec_init(IEC_DEFAULT_DEVICE);
     cbm_dos_init();
 
@@ -104,39 +159,42 @@ int main(void) {
     fastload_jiffydos_register();
     fastload_burst_register();
     fastload_epyx_register();
-    uart_puts("Fastload OK\r\n");
+    TRACE("Fastload OK\r\n");
 
     /* Initialize compression protocol */
     compress_proto_init();
-    uart_puts("Compress OK\r\n");
+    TRACE("Compress OK\r\n");
 
     /* Enable interrupts before floppy init (MFM capture needs ISR) */
     sei();
 
     /* Initialize floppy drive (~2.8s blocking) */
     floppy_init();
-    uart_puts("Floppy init...\r\n");
+    TRACE("Floppy init...\r\n");
 
     floppy_motor_on();
     int rc = floppy_recalibrate();
     if (rc == FLOPPY_OK) {
-        uart_puts("Drive OK\r\n");
+        TRACE("Drive OK\r\n");
     } else {
-        uart_puts("No drive!\r\n");
+        TRACE("No drive!\r\n");
         led_debug_blink(DBG_FLOPPY_ERROR);
     }
 
     /* Mount FAT12 */
-    uart_puts("Mount FAT12...\r\n");
+    TRACE("Mount FAT12...\r\n");
     rc = fat12_mount();
     if (rc == FAT12_OK) {
-        uart_puts("FAT12 OK\r\n");
+        TRACE("FAT12 OK\r\n");
     } else {
-        uart_puts("No disk\r\n");
+        TRACE("No disk\r\n");
         led_debug_blink(DBG_NO_DISK);
     }
 
-    uart_puts("Ready.\r\n");
+    /* Motor off after init — read/write will restart it on demand */
+    floppy_motor_off();
+
+    TRACE("Ready.\r\n");
     led_debug_blink(DBG_BOOT_OK);
 
     /* Main loop: service IEC bus */

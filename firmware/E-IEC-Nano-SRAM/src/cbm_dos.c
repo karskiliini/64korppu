@@ -6,6 +6,7 @@
 #include "fastload_burst.h"
 #include "fastload_epyx.h"
 #include "compress_proto.h"
+#include "uart.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -184,13 +185,23 @@ static void generate_directory(void) {
 }
 
 void cbm_dos_open(uint8_t sa, const char *filename, uint8_t len) {
+    TRACE("[DOS] open SA=");
+    uart_putdec(sa);
+    TRACE(" file='");
+    for (uint8_t i = 0; i < len; i++) uart_putchar(filename[i]);
+    TRACE("'\r\n");
+
     char name8[9] = {0};
     char ext3[4] = {0};
 
     if (sa == IEC_SA_LOAD || sa == IEC_SA_SAVE) {
         /* Directory listing? */
         if (sa == IEC_SA_LOAD && len == 1 && filename[0] == '$') {
+            TRACE("[DOS] dir listing\r\n");
             generate_directory();
+            TRACE("[DOS] dir len=");
+            uart_putdec(dir_len);
+            TRACE("\r\n");
             /* Reset compression buffers for new transfer */
             comp_raw_pos = 0;
             comp_frame_len = 0;
@@ -202,16 +213,29 @@ void cbm_dos_open(uint8_t sa, const char *filename, uint8_t len) {
         }
 
         fat12_parse_filename(filename, name8, ext3);
+        TRACE("[DOS] parsed: '");
+        for (int i = 0; i < 8; i++) uart_putchar(name8[i]);
+        TRACE("'.'");
+        for (int i = 0; i < 3; i++) uart_putchar(ext3[i]);
+        TRACE("'\r\n");
 
         if (sa == IEC_SA_LOAD) {
+            TRACE("[DOS] LOAD\r\n");
             int rc = fat12_open_read(name8, ext3, &channel_file);
             if (rc != FAT12_OK) {
+                TRACE("[DOS] LOAD failed rc=");
+                uart_putdec((uint16_t)(-rc));
+                TRACE("\r\n");
                 iec_set_error(CBM_ERR_FILE_NOT_FOUND, "FILE NOT FOUND", 0, 0);
                 return;
             }
         } else {
+            TRACE("[DOS] SAVE\r\n");
             int rc = fat12_create(name8, ext3, &channel_file);
             if (rc != FAT12_OK) {
+                TRACE("[DOS] SAVE create failed rc=");
+                uart_putdec((uint16_t)(-rc));
+                TRACE("\r\n");
                 if (rc == FAT12_ERR_DISK_FULL) {
                     iec_set_error(CBM_ERR_DISK_FULL, "DISK FULL", 0, 0);
                 } else {
@@ -227,10 +251,14 @@ void cbm_dos_open(uint8_t sa, const char *filename, uint8_t len) {
         comp_filling = true;
         comp_eof_sent = false;
         iec_set_error(CBM_ERR_OK, "OK", 0, 0);
+        TRACE("[DOS] open OK\r\n");
     }
 }
 
 void cbm_dos_close(uint8_t sa) {
+    TRACE("[DOS] close SA=");
+    uart_putdec(sa);
+    TRACE("\r\n");
     (void)sa;
     if (channel_file.active) {
         fat12_close(&channel_file);
@@ -420,6 +448,10 @@ void cbm_dos_listen_byte(uint8_t sa, uint8_t byte) {
 
 void cbm_dos_execute_command(const char *cmd, uint8_t len) {
     if (len == 0) return;
+
+    TRACE("[DOS] cmd: '");
+    for (uint8_t i = 0; i < len; i++) uart_putchar(cmd[i]);
+    TRACE("'\r\n");
 
     char name8[9], ext3[4];
     char cmd_buf[42];

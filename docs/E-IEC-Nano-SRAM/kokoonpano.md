@@ -91,6 +91,18 @@ Juota matalimmasta korkeimpaan, jotta komponentit pysyvät paikallaan kun levy o
 - Kylmäjuotos (mattapintainen, rosoinen) → lämmitä uudelleen ja lisää tinaa
 - Tina-silta kahden padin välillä → poista juotospumpulla tai juotosnauhalla
 
+## Reset-nappi (valinnainen)
+
+Arduino Nanon voi varustaa ulkoisella reset-napilla:
+
+1. Kytke hetkellinen painonappi (normally open) Nanon **RST**-pinnin ja **GND**-pinnin väliin
+2. Nanossa on sisäinen pull-up-vastus RST-pinnissä, joten ulkoista pull-upia ei tarvita
+3. Napin painaminen vetää RST-pinnin maahan → Nano resetoituu
+
+Nappi ei ole PCB:llä — se kytketään hyppylangalla suoraan Nanon headereihin.
+
+> **Vinkki:** 100 nF keraaminen kondensaattori napin yli (RST–GND) vähentää mekaanista värähtelyä (debounce), mutta ei ole välttämätön.
+
 ## Test pointit (TP1–TP14)
 
 Levyn takapuolella (B.Cu) on 14 testipistettä. Näitä **ei juoteta** — ne ovat mittauspisteitä joihin voi koskea yleismittarin koetinkärjellä vianetsinnässä. Katso [diagnostiikkapadit.md](diagnostiikkapadit.md) lisätietoja.

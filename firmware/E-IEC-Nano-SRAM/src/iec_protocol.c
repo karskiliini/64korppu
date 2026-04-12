@@ -3,6 +3,8 @@
 #include "config.h"
 #include "fastload.h"
 #include "fastload_jiffydos.h"
+#include "floppy_ctrl.h"
+#include "fat12.h"
 #include "uart.h"
 #include "led_debug.h"
 
@@ -32,6 +34,10 @@ static iec_device_t device = {0};
 /* Timing uses _delay_us busy loops in protocol functions */
 
 void iec_init(uint8_t device_num) {
+    TRACE("[IEC] init dev #");
+    uart_putdec(device_num);
+    TRACE("\r\n");
+
     device.device_number = device_num;
     device.state = IEC_STATE_IDLE;
 
@@ -40,6 +46,18 @@ void iec_init(uint8_t device_num) {
                   (1 << IEC_PIN_DATA) | (1 << IEC_PIN_RESET));
     IEC_PORT |= (1 << IEC_PIN_ATN) | (1 << IEC_PIN_CLK) |
                 (1 << IEC_PIN_DATA) | (1 << IEC_PIN_RESET);
+
+    /* Read initial bus state */
+    uint8_t pins = IEC_PINR;
+    TRACE("[IEC] bus: ATN=");
+    uart_putchar((pins & (1 << IEC_PIN_ATN)) ? 'H' : 'L');
+    TRACE(" CLK=");
+    uart_putchar((pins & (1 << IEC_PIN_CLK)) ? 'H' : 'L');
+    TRACE(" DATA=");
+    uart_putchar((pins & (1 << IEC_PIN_DATA)) ? 'H' : 'L');
+    TRACE(" RST=");
+    uart_putchar((pins & (1 << IEC_PIN_RESET)) ? 'H' : 'L');
+    TRACE("\r\n");
 
     memset(device.channels, 0, sizeof(device.channels));
     iec_set_error(CBM_ERR_DOS_MISMATCH, CBM_DOS_ID, 0, 0);
@@ -233,10 +251,43 @@ bool iec_error_talk_byte(uint8_t *byte, bool *eoi) {
 void iec_service(void) {
     /* Check for bus reset */
     if (IEC_IS_LOW(IEC_PIN_RESET)) {
+        TRACE("[IEC] *** BUS RESET ***\r\n");
         device.state = IEC_STATE_IDLE;
         iec_release_all();
+
+        /* Shutdown floppy and close any open files */
+        floppy_motor_off();
+        fat12_unmount();
+        cbm_dos_init();
+        fastload_reset();
+
+        TRACE("[IEC] waiting for reset release...\r\n");
         while (IEC_IS_LOW(IEC_PIN_RESET));
-        _delay_ms(100);
+        _delay_ms(500);
+        TRACE("[IEC] reset released, reinit floppy\r\n");
+
+        /* Full floppy reinit (same as boot) */
+        floppy_motor_on();
+        int rc = floppy_recalibrate();
+        if (rc == FLOPPY_OK) {
+            TRACE("[IEC] drive OK\r\n");
+        } else {
+            TRACE("[IEC] no drive!\r\n");
+            led_debug_blink(DBG_FLOPPY_ERROR);
+        }
+
+        TRACE("[IEC] mount FAT12...\r\n");
+        rc = fat12_mount();
+        if (rc == FAT12_OK) {
+            TRACE("[IEC] FAT12 OK\r\n");
+        } else {
+            TRACE("[IEC] no disk\r\n");
+            led_debug_blink(DBG_NO_DISK);
+        }
+
+        floppy_motor_off();
+        TRACE("[IEC] reinit done, ready\r\n");
+        led_debug_blink(DBG_BOOT_OK);
         return;
     }
 
@@ -250,10 +301,12 @@ void iec_service(void) {
                 bool ok = fl && fl->send_byte ? fl->send_byte(byte, eoi)
                                                : iec_send_byte(byte, eoi);
                 if (!ok) {
+                    TRACE("[IEC] talk: send failed\r\n");
                     device.state = IEC_STATE_IDLE;
                     iec_release_all();
                 }
                 if (eoi) {
+                    TRACE("[IEC] talk: EOI, done\r\n");
                     device.state = IEC_STATE_IDLE;
                     iec_release_all();
                 }
@@ -264,16 +317,23 @@ void iec_service(void) {
 
     /* ATN asserted - receive commands */
     led_green_on();
-    uart_putchar('A');
+    TRACE("[IEC] ATN\r\n");
     IEC_ASSERT(IEC_PIN_DATA);
 
     uint8_t cmd;
     while (IEC_IS_LOW(IEC_PIN_ATN)) {
-        if (!iec_receive_byte_atn(&cmd)) break;
+        if (!iec_receive_byte_atn(&cmd)) {
+            TRACE("[IEC] ATN byte recv fail\r\n");
+            break;
+        }
+
+        TRACE("[IEC] cmd=0x");
+        uart_puthex8(cmd);
 
         uint8_t device_num = cmd & 0x1F;
 
         if (cmd == IEC_CMD_UNLISTEN) {
+            TRACE(" UNLISTEN\r\n");
             if (device.state == IEC_STATE_LISTENER) {
                 iec_channel_t *ch = &device.channels[0];
                 if (device.current_sa == IEC_SA_COMMAND && ch->buf_len > 0) {
@@ -288,23 +348,33 @@ void iec_service(void) {
                 fastload_reset();
             }
         } else if (cmd == IEC_CMD_UNTALK) {
+            TRACE(" UNTALK\r\n");
             if (device.state == IEC_STATE_TALKER) {
                 device.state = IEC_STATE_IDLE;
                 iec_release_all();
                 fastload_reset();
             }
         } else if ((cmd & 0xE0) == IEC_CMD_LISTEN) {
+            TRACE(" LISTEN #");
+            uart_putdec(device_num);
+            TRACE("\r\n");
             if (device_num == device.device_number) {
                 device.state = IEC_STATE_LISTENER;
-                uart_puts("L8\r\n");
+                TRACE("[IEC] -> LISTENER\r\n");
             }
         } else if ((cmd & 0xE0) == IEC_CMD_TALK) {
+            TRACE(" TALK #");
+            uart_putdec(device_num);
+            TRACE("\r\n");
             if (device_num == device.device_number) {
                 device.state = IEC_STATE_TALKER;
-                uart_puts("T8\r\n");
+                TRACE("[IEC] -> TALKER\r\n");
             }
         } else if ((cmd & 0xF0) == IEC_CMD_OPEN) {
             uint8_t sa = cmd & 0x0F;
+            TRACE(" OPEN SA=");
+            uart_putdec(sa);
+            TRACE("\r\n");
             device.current_sa = sa;
 
             if (device.state == IEC_STATE_LISTENER) {
@@ -318,7 +388,12 @@ void iec_service(void) {
             }
         } else if ((cmd & 0xF0) == (IEC_CMD_CLOSE & 0xF0)) {
             uint8_t sa = cmd & 0x0F;
+            TRACE(" CLOSE SA=");
+            uart_putdec(sa);
+            TRACE("\r\n");
             cbm_dos_close(sa);
+        } else {
+            TRACE(" ??\r\n");
         }
     }
 
@@ -326,19 +401,32 @@ void iec_service(void) {
 
     /* ATN released — detect fast-load protocol for talker mode */
     if (device.state == IEC_STATE_TALKER) {
+        TRACE("[IEC] ATN released, detect fastload\r\n");
         fastload_detect();
         const fastload_protocol_t *fl = fastload_active();
-        if (fl && fl->on_atn_end) fl->on_atn_end();
+        if (fl && fl->on_atn_end) {
+            TRACE("[IEC] fastload active\r\n");
+            fl->on_atn_end();
+        }
     }
 
     if (device.state == IEC_STATE_LISTENER) {
+        TRACE("[IEC] listening for data SA=");
+        uart_putdec(device.current_sa);
+        TRACE("\r\n");
         uint8_t byte;
         bool eoi;
         iec_channel_t *ch = &device.channels[0];
 
         while (1) {
-            if (IEC_IS_LOW(IEC_PIN_ATN)) break;
-            if (!iec_receive_byte(&byte, &eoi)) break;
+            if (IEC_IS_LOW(IEC_PIN_ATN)) {
+                TRACE("[IEC] ATN during listen\r\n");
+                break;
+            }
+            if (!iec_receive_byte(&byte, &eoi)) {
+                TRACE("[IEC] listen recv fail\r\n");
+                break;
+            }
 
             if (!ch->open && device.current_sa != IEC_SA_COMMAND) {
                 if (ch->filename_len < sizeof(ch->filename) - 1) {
@@ -346,6 +434,9 @@ void iec_service(void) {
                 }
                 if (eoi) {
                     ch->filename[ch->filename_len] = '\0';
+                    TRACE("[IEC] filename='");
+                    uart_puts(ch->filename);
+                    TRACE("'\r\n");
                     cbm_dos_open(device.current_sa, ch->filename, ch->filename_len);
                     ch->open = true;
                 }
@@ -356,7 +447,10 @@ void iec_service(void) {
                 cbm_dos_listen_byte(device.current_sa, byte);
             }
 
-            if (eoi) break;
+            if (eoi) {
+                TRACE("[IEC] listen EOI\r\n");
+                break;
+            }
         }
     }
 }

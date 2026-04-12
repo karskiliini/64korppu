@@ -2,6 +2,7 @@
 #include "config.h"
 #include "shiftreg.h"
 #include "mfm_codec.h"
+#include "uart.h"
 
 #ifdef __AVR__
 
@@ -22,6 +23,8 @@
 static floppy_state_t state = {0};
 
 void floppy_init(void) {
+    TRACE("[FLP] init GPIO...\r\n");
+
     /* Input pins with pull-ups: /TRK00 (A0), /WPT (A1), /DSKCHG (A2) */
     FLOPPY_IN_DDR &= ~((1 << FLOPPY_TRK00_PIN) |
                         (1 << FLOPPY_WPT_PIN) |
@@ -46,25 +49,42 @@ void floppy_init(void) {
     sr &= ~(1 << SR_BIT_DRVSEL);   /* Assert /DRVSEL (select drive) */
     shiftreg_write(sr);
 
+    /* Read input pin states for debug */
+    uint8_t pins = FLOPPY_IN_PINR;
+    TRACE("[FLP] inputs: TRK00=");
+    uart_putchar((pins & (1 << FLOPPY_TRK00_PIN)) ? 'H' : 'L');
+    TRACE(" WPT=");
+    uart_putchar((pins & (1 << FLOPPY_WPT_PIN)) ? 'H' : 'L');
+    TRACE(" DSKCHG=");
+    uart_putchar((pins & (1 << FLOPPY_DSKCHG_PIN)) ? 'H' : 'L');
+    TRACE("\r\n");
+
     state.current_track = 0;
     state.current_side = 0;
     state.motor_on = false;
     state.disk_present = true;
     state.write_protected = false;
     state.initialized = false;
+
+    TRACE("[FLP] init done, SR=0x");
+    uart_puthex8(sr);
+    TRACE("\r\n");
 }
 
 void floppy_motor_on(void) {
     if (!state.motor_on) {
+        TRACE("[FLP] motor ON, spin-up...\r\n");
         shiftreg_assert_bit(SR_BIT_MOTEA);
         shiftreg_assert_bit(SR_BIT_MOTOR);
         _delay_ms(FLOPPY_MOTOR_SPIN_MS);
         state.motor_on = true;
         PORTB |= (1 << FLOPPY_LED_PIN);  /* LED on */
+        TRACE("[FLP] motor ON done\r\n");
     }
 }
 
 void floppy_motor_off(void) {
+    TRACE("[FLP] motor OFF\r\n");
     shiftreg_release_bit(SR_BIT_MOTEA);
     shiftreg_release_bit(SR_BIT_MOTOR);
     state.motor_on = false;
@@ -88,25 +108,46 @@ static void step_once(bool inward) {
 }
 
 int floppy_recalibrate(void) {
+    TRACE("[FLP] recalibrate: seeking track 0...\r\n");
     for (int i = 0; i < 85; i++) {
         if (!(FLOPPY_IN_PINR & (1 << FLOPPY_TRK00_PIN))) {
             /* /TRK00 active low - we're at track 0 */
             state.current_track = 0;
             state.initialized = true;
             _delay_ms(FLOPPY_STEP_SETTLE_MS);
+            TRACE("[FLP] TRK00 found after ");
+            uart_putdec(i);
+            TRACE(" steps\r\n");
             return FLOPPY_OK;
         }
         step_once(false);  /* Step outward */
     }
+    TRACE("[FLP] ERR: TRK00 not found after 85 steps!\r\n");
     return FLOPPY_ERR_NO_TRK0;
 }
 
 int floppy_seek(uint8_t track) {
-    if (track >= FLOPPY_TRACKS) return FLOPPY_ERR_SEEK;
+    if (track >= FLOPPY_TRACKS) {
+        TRACE("[FLP] seek ERR: track ");
+        uart_putdec(track);
+        TRACE(" >= ");
+        uart_putdec(FLOPPY_TRACKS);
+        TRACE("\r\n");
+        return FLOPPY_ERR_SEEK;
+    }
 
     if (!state.initialized) {
+        TRACE("[FLP] seek: not initialized, recalibrating\r\n");
         int rc = floppy_recalibrate();
         if (rc != FLOPPY_OK) return rc;
+    }
+
+    if (state.current_track != track) {
+        TRACE("[FLP] seek T");
+        uart_putdec(state.current_track);
+        TRACE("->T");
+        uart_putdec(track);
+        TRACE("\r\n");
     }
 
     while (state.current_track != track) {
@@ -124,6 +165,9 @@ int floppy_seek(uint8_t track) {
 }
 
 void floppy_select_side(uint8_t side) {
+    TRACE("[FLP] side=");
+    uart_putdec(side);
+    TRACE("\r\n");
     if (side) {
         shiftreg_assert_bit(SR_BIT_SIDE1);   /* LOW = side 1 */
     } else {
@@ -135,37 +179,95 @@ void floppy_select_side(uint8_t side) {
 
 int floppy_read_sector(uint8_t track, uint8_t side, uint8_t sector,
                         uint8_t *buf) {
-    if (sector < 1 || sector > FLOPPY_SECTORS_HD) return FLOPPY_ERR_NO_SECTOR;
+    TRACE("[FLP] read T=");
+    uart_putdec(track);
+    TRACE(" S=");
+    uart_putdec(side);
+    TRACE(" R=");
+    uart_putdec(sector);
+    TRACE("\r\n");
+
+    if (sector < 1 || sector > FLOPPY_SECTORS_HD) {
+        TRACE("[FLP] read ERR: bad sector\r\n");
+        return FLOPPY_ERR_NO_SECTOR;
+    }
+
+    floppy_motor_on();
 
     /* Check write protect */
     state.write_protected = !(FLOPPY_IN_PINR & (1 << FLOPPY_WPT_PIN));
+    TRACE("[FLP] WP=");
+    uart_putchar(state.write_protected ? 'Y' : 'N');
+    TRACE("\r\n");
 
     int rc = floppy_seek(track);
-    if (rc != FLOPPY_OK) return rc;
+    if (rc != FLOPPY_OK) {
+        TRACE("[FLP] read: seek failed\r\n");
+        return rc;
+    }
 
     floppy_select_side(side);
 
     /* Capture raw MFM track to SRAM */
+    TRACE("[FLP] MFM capture...\r\n");
     rc = mfm_capture_track();
-    if (rc != 0) return FLOPPY_ERR_READ;
+    if (rc != 0) {
+        TRACE("[FLP] MFM capture FAIL rc=");
+        uart_putdec((uint16_t)(-rc));
+        TRACE("\r\n");
+        return FLOPPY_ERR_READ;
+    }
+    TRACE("[FLP] MFM capture OK\r\n");
 
     /* Decode sector from SRAM track buffer */
+    TRACE("[FLP] MFM decode R=");
+    uart_putdec(sector);
+    TRACE("...\r\n");
     rc = mfm_decode_sector(sector, buf);
-    if (rc != 0) return FLOPPY_ERR_READ;
+    if (rc != 0) {
+        TRACE("[FLP] MFM decode FAIL\r\n");
+        return FLOPPY_ERR_READ;
+    }
+    TRACE("[FLP] read OK, first bytes: ");
+    uart_puthex8(buf[0]);
+    uart_putchar(' ');
+    uart_puthex8(buf[1]);
+    uart_putchar(' ');
+    uart_puthex8(buf[2]);
+    uart_putchar(' ');
+    uart_puthex8(buf[3]);
+    TRACE("\r\n");
 
     return FLOPPY_OK;
 }
 
 int floppy_write_sector(uint8_t track, uint8_t side, uint8_t sector,
                          const uint8_t *buf) {
-    if (sector < 1 || sector > FLOPPY_SECTORS_HD) return FLOPPY_ERR_NO_SECTOR;
+    TRACE("[FLP] write T=");
+    uart_putdec(track);
+    TRACE(" S=");
+    uart_putdec(side);
+    TRACE(" R=");
+    uart_putdec(sector);
+    TRACE("\r\n");
+
+    if (sector < 1 || sector > FLOPPY_SECTORS_HD) {
+        TRACE("[FLP] write ERR: bad sector\r\n");
+        return FLOPPY_ERR_NO_SECTOR;
+    }
+
+    floppy_motor_on();
 
     if (!(FLOPPY_IN_PINR & (1 << FLOPPY_WPT_PIN))) {
+        TRACE("[FLP] write ERR: write protected!\r\n");
         return FLOPPY_ERR_WP;
     }
 
     int rc = floppy_seek(track);
-    if (rc != FLOPPY_OK) return rc;
+    if (rc != FLOPPY_OK) {
+        TRACE("[FLP] write: seek failed\r\n");
+        return rc;
+    }
 
     floppy_select_side(side);
 
@@ -177,8 +279,13 @@ int floppy_write_sector(uint8_t track, uint8_t side, uint8_t sector,
         .size_code = 2,
     };
 
+    TRACE("[FLP] MFM write...\r\n");
     rc = mfm_write_sector(&id, buf);
-    if (rc != 0) return FLOPPY_ERR_WRITE;
+    if (rc != 0) {
+        TRACE("[FLP] MFM write FAIL\r\n");
+        return FLOPPY_ERR_WRITE;
+    }
+    TRACE("[FLP] write OK\r\n");
 
     return FLOPPY_OK;
 }

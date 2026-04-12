@@ -1,5 +1,6 @@
 #include "shiftreg.h"
 #include "config.h"
+#include "uart.h"
 
 #ifdef __AVR__
 
@@ -28,6 +29,7 @@ static void latch(void) {
 }
 
 void shiftreg_init(void) {
+    TRACE("[SR] init\r\n");
     /* RCLK pin as output, start low */
     SR_RCLK_DDR |= (1 << SR_RCLK_PIN);
     SR_RCLK_PORT &= ~(1 << SR_RCLK_PIN);
@@ -35,6 +37,9 @@ void shiftreg_init(void) {
     /* Write default state (all deasserted) */
     sr_state = SR_DEFAULT;
     shiftreg_write(sr_state);
+    TRACE("[SR] default=0x");
+    uart_puthex8(sr_state);
+    TRACE("\r\n");
 }
 
 void shiftreg_write(uint8_t value) {

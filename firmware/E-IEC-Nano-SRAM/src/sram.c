@@ -1,5 +1,6 @@
 #include "sram.h"
 #include "config.h"
+#include "uart.h"
 
 #ifdef __AVR__
 
@@ -32,6 +33,7 @@ static void sram_send_addr(uint32_t addr) {
 }
 
 void sram_init(void) {
+    TRACE("[SRAM] init SPI...\r\n");
     /* Configure SPI pins: MOSI, SCK, /CS as outputs */
     DDRB |= (1 << SPI_MOSI) | (1 << SPI_SCK) | (1 << SPI_CS_SRAM);
     DDRB &= ~(1 << SPI_MISO);  /* MISO as input */
@@ -47,6 +49,20 @@ void sram_init(void) {
     spi_transfer(SRAM_CMD_WRMR);
     spi_transfer(SRAM_MODE_SEQ);
     CS_HIGH();
+
+    /* Verify SRAM by write/read test */
+    uint8_t test_val = 0xA5;
+    sram_write_byte(0x0000, test_val);
+    uint8_t read_back = sram_read_byte(0x0000);
+    TRACE("[SRAM] test: wrote 0x");
+    uart_puthex8(test_val);
+    TRACE(" read 0x");
+    uart_puthex8(read_back);
+    if (read_back == test_val) {
+        TRACE(" OK\r\n");
+    } else {
+        TRACE(" FAIL!\r\n");
+    }
 }
 
 void sram_read(uint32_t addr, uint8_t *buf, uint16_t len) {

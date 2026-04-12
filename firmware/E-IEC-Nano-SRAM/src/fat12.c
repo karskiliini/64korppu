@@ -1,5 +1,6 @@
 #include "fat12.h"
 #include "config.h"
+#include "uart.h"
 #include <string.h>
 
 #ifdef __AVR__
@@ -99,37 +100,91 @@ int fat12_flush_fat(void) {
 /* ---- Mount / Unmount ---- */
 
 int fat12_mount(void) {
-    if (state.mounted) return FAT12_OK;
+    if (state.mounted) {
+        TRACE("[FAT] already mounted\r\n");
+        return FAT12_OK;
+    }
 
+    TRACE("[FAT] mount: reading boot sector...\r\n");
     /* Read boot sector */
-    if (disk_read_sector(0, sector_buf) != 0) return FAT12_ERR_IO;
+    if (disk_read_sector(0, sector_buf) != 0) {
+        TRACE("[FAT] mount: boot sector read FAIL\r\n");
+        return FAT12_ERR_IO;
+    }
 
     /* Validate BPB */
     fat12_bpb_t *bpb = (fat12_bpb_t *)sector_buf;
-    if (bpb->bytes_per_sector != 512) return FAT12_ERR_NOT_FAT12;
-    if (bpb->num_fats != 2) return FAT12_ERR_NOT_FAT12;
-    if (bpb->sectors_per_cluster == 0) return FAT12_ERR_NOT_FAT12;
+    TRACE("[FAT] BPB: bps=");
+    uart_putdec(bpb->bytes_per_sector);
+    TRACE(" spc=");
+    uart_putdec(bpb->sectors_per_cluster);
+    TRACE(" nfat=");
+    uart_putdec(bpb->num_fats);
+    TRACE(" tot=");
+    uart_putdec(bpb->total_sectors);
+    TRACE(" media=0x");
+    uart_puthex8(bpb->media_type);
+    TRACE("\r\n");
+    TRACE("[FAT] BPB: spf=");
+    uart_putdec(bpb->sectors_per_fat);
+    TRACE(" spt=");
+    uart_putdec(bpb->sectors_per_track);
+    TRACE(" heads=");
+    uart_putdec(bpb->num_heads);
+    TRACE(" root=");
+    uart_putdec(bpb->root_entries);
+    TRACE(" sig=0x");
+    uart_puthex8(bpb->boot_sig);
+    TRACE("\r\n");
+
+    if (bpb->bytes_per_sector != 512) {
+        TRACE("[FAT] ERR: bps!=512\r\n");
+        return FAT12_ERR_NOT_FAT12;
+    }
+    if (bpb->num_fats != 2) {
+        TRACE("[FAT] ERR: nfat!=2\r\n");
+        return FAT12_ERR_NOT_FAT12;
+    }
+    if (bpb->sectors_per_cluster == 0) {
+        TRACE("[FAT] ERR: spc==0\r\n");
+        return FAT12_ERR_NOT_FAT12;
+    }
 
     /* Store volume info */
     if (bpb->boot_sig == 0x29) {
         state.volume_serial = bpb->volume_serial;
         memcpy(state.volume_label, bpb->volume_label, 11);
         state.volume_label[11] = '\0';
+        TRACE("[FAT] label='");
+        uart_puts(state.volume_label);
+        TRACE("' serial=0x");
+        uart_puthex16((uint16_t)(state.volume_serial >> 16));
+        uart_puthex16((uint16_t)(state.volume_serial & 0xFFFF));
+        TRACE("\r\n");
     } else {
         state.volume_serial = 0;
         memcpy(state.volume_label, "NO NAME    ", 11);
         state.volume_label[11] = '\0';
+        TRACE("[FAT] no boot sig, default label\r\n");
     }
 
     /* Read FAT #1 into SRAM */
+    TRACE("[FAT] reading FAT1 (");
+    uart_putdec(FAT12_SECTORS_PER_FAT);
+    TRACE(" sectors)...\r\n");
     for (uint8_t i = 0; i < FAT12_SECTORS_PER_FAT; i++) {
-        if (disk_read_sector(FAT12_FAT1_START + i, sector_buf) != 0)
+        if (disk_read_sector(FAT12_FAT1_START + i, sector_buf) != 0) {
+            TRACE("[FAT] FAT1 read FAIL at sector ");
+            uart_putdec(i);
+            TRACE("\r\n");
             return FAT12_ERR_IO;
+        }
         sram_write(SRAM_FAT_CACHE + (uint32_t)i * 512, sector_buf, 512);
     }
 
     state.mounted = true;
     state.fat_dirty = false;
+    TRACE("[FAT] mount OK\r\n");
     return FAT12_OK;
 }
 
@@ -191,9 +246,18 @@ int fat12_readdir(uint16_t *index, fat12_dirent_t *entry) {
 /* ---- File read operations ---- */
 
 int fat12_open_read(const char *name, const char *ext, fat12_file_t *file) {
+    TRACE("[FAT] open_read '");
+    for (int i = 0; i < 8 && name[i] != ' '; i++) uart_putchar(name[i]);
+    uart_putchar('.');
+    for (int i = 0; i < 3 && ext[i] != ' '; i++) uart_putchar(ext[i]);
+    TRACE("'\r\n");
+
     fat12_dirent_t entry;
     int rc = fat12_find_file(name, ext, &entry);
-    if (rc != FAT12_OK) return rc;
+    if (rc != FAT12_OK) {
+        TRACE("[FAT] file not found\r\n");
+        return rc;
+    }
 
     memset(file, 0, sizeof(*file));
     file->active = true;
@@ -202,6 +266,12 @@ int fat12_open_read(const char *name, const char *ext, fat12_file_t *file) {
     file->file_size = entry.file_size;
     file->position = 0;
     file->write_mode = false;
+
+    TRACE("[FAT] opened: cluster=");
+    uart_putdec(entry.cluster_lo);
+    TRACE(" size=");
+    uart_putdec((uint16_t)entry.file_size);
+    TRACE("\r\n");
     return FAT12_OK;
 }
 
@@ -350,6 +420,14 @@ int fat12_write(fat12_file_t *file, const uint8_t *buf, uint16_t count) {
 
 int fat12_close(fat12_file_t *file) {
     if (!file->active) return FAT12_OK;
+
+    TRACE("[FAT] close: pos=");
+    uart_putdec((uint16_t)file->position);
+    TRACE(" write=");
+    uart_putchar(file->write_mode ? 'Y' : 'N');
+    TRACE(" mod=");
+    uart_putchar(file->modified ? 'Y' : 'N');
+    TRACE("\r\n");
 
     if (file->write_mode && file->modified) {
         /* Update directory entry with final file size */
