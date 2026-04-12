@@ -252,52 +252,50 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
                         /* Preamble just ended — extract next 10 bytes */
                         TRACE("\r\n[MFM] preamble end @");
                         uart_putdec((uint16_t)pulse_num);
-                        TRACE(" bytes: ");
+                        TRACE(" (len=");
+                        uart_putdec(preamble_count);
+                        TRACE(")");
+                        /* Save position for two-pass extraction */
+                        uint32_t save_sram = sram_pos;
+                        uint32_t save_raw = raw_bits;
 
-                        /* Use preamble alignment: data at position +1 */
-                        uint8_t dbyte = 0;
-                        uint8_t dbits = 0;
-                        uint8_t dcount = 0;
-                        /* First consume residual bits from current raw_avail */
-                        uint8_t tmp_avail = raw_avail;
-                        while (tmp_avail >= 2 && dcount < 200) {
-                            tmp_avail -= 2;
-                            dbyte = (dbyte << 1) | ((raw_bits >> (tmp_avail + 1)) & 1);
-                            dbits += 2;
-                            if (dbits >= 16) {
-                                uart_puthex8(dbyte);
-                                uart_putchar(' ');
-                                dbyte = 0; dbits = 0; dcount++;
-                                if ((dcount % 16) == 0) TRACE("\r\n");
-                            }
-                        }
-                        /* Read more from SRAM */
-                        while (dcount < 200 && sram_pos < capture_count) {
-                            uint8_t pk = sram_seq_read_byte();
-                            sram_pos++;
-                            for (int pp = 3; pp >= 0 && dcount < 200; pp--) {
-                                uint8_t c2 = (pk >> (pp * 2)) & 0x03;
-                                uint8_t add2;
-                                switch (c2) {
-                                    case 0: raw_bits = (raw_bits << 2) | 0x01; add2 = 2; break;
-                                    case 1: raw_bits = (raw_bits << 3) | 0x01; add2 = 3; break;
-                                    case 2: raw_bits = (raw_bits << 4) | 0x01; add2 = 4; break;
-                                    default: add2 = 0; break;
-                                }
-                                tmp_avail += add2;
-                                while (tmp_avail >= 2 && dcount < 200) {
-                                    tmp_avail -= 2;
-                                    dbyte = (dbyte << 1) | ((raw_bits >> (tmp_avail + 1)) & 1);
-                                    dbits += 2;
-                                    if (dbits >= 16) {
-                                        uart_puthex8(dbyte);
-                                        uart_putchar(' ');
-                                        dbyte = 0; dbits = 0; dcount++;
+                        for (uint8_t try_off = 0; try_off <= 1; try_off++) {
+                            TRACE(" [off");
+                            uart_putdec(try_off);
+                            TRACE("]:");
+                            uint32_t lr = save_raw;
+                            uint8_t db = 0, dn = 0, dc = 0, ta = 0;
+                            /* Re-read from saved position */
+                            sram_end_seq();
+                            sram_begin_seq_read(SRAM_MFM_TRACK + save_sram);
+                            sram_pos = save_sram;
+                            while (dc < 32 && sram_pos < capture_count) {
+                                uint8_t pk = sram_seq_read_byte();
+                                sram_pos++;
+                                for (int pp = 3; pp >= 0 && dc < 32; pp--) {
+                                    uint8_t c2 = (pk >> (pp * 2)) & 0x03;
+                                    uint8_t a2;
+                                    switch (c2) {
+                                        case 0: lr = (lr << 2) | 0x01; a2 = 2; break;
+                                        case 1: lr = (lr << 3) | 0x01; a2 = 3; break;
+                                        case 2: lr = (lr << 4) | 0x01; a2 = 4; break;
+                                        default: a2 = 0; break;
+                                    }
+                                    ta += a2;
+                                    while (ta >= 2 && dc < 32) {
+                                        ta -= 2;
+                                        db = (db << 1) | ((lr >> (ta + try_off)) & 1);
+                                        dn += 2;
+                                        if (dn >= 16) {
+                                            uart_puthex8(db);
+                                            uart_putchar(' ');
+                                            db = 0; dn = 0; dc++;
+                                        }
                                     }
                                 }
                             }
+                            TRACE("\r\n");
                         }
-                        TRACE("\r\n");
                         sync_dumps_done++;
                     }
                     preamble_count = 0;
