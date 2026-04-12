@@ -279,13 +279,13 @@ int mfm_capture_track(void) {
         uint8_t avail = 0, dbyte = 0, dbits = 0;
         uint16_t dcount = 0;
 
-        TRACE("[MFM] decoded (first 200 bytes, delay=");
+        TRACE("[MFM] decoded (first 2048 bytes ~3 sectors, delay=");
         uart_putdec(cal_delay);
         TRACE(" off=");
         uart_putdec(cal_offset);
         TRACE("):\r\n");
 
-        for (uint16_t i = 0; i < sample && dcount < 200; i++) {
+        for (uint16_t i = 0; i < sample && dcount < 2048; i++) {
             uint8_t v = sram_seq_read_byte();
             int16_t adj = (int16_t)v - (int16_t)cal_delay + 16;
             uint8_t cells;
@@ -299,7 +299,7 @@ int mfm_capture_track(void) {
             avail += cells;
             if (avail > 30) avail = 30;
 
-            while (avail >= 2 && dcount < 200) {
+            while (avail >= 2 && dcount < 2048) {
                 avail -= 2;
                 dbyte = (dbyte << 1) | ((raw_bits >> (avail + cal_offset)) & 1);
                 dbits++;
