@@ -87,6 +87,11 @@
 #define SR_RCLK_DDR      DDRD
 #define SR_RCLK_PORT     PORTD
 
+/* 74HC595 output enable (active LOW, active = outputs drive) */
+#define SR_OE_PIN        PC3    /* A3 = /OE */
+#define SR_OE_DDR        DDRC
+#define SR_OE_PORT       PORTC
+
 /* Floppy direct GPIO */
 #define FLOPPY_WDATA_PIN    PD7    /* D7 = /WDATA (direct for timing) */
 #define FLOPPY_WDATA_DDR    DDRD

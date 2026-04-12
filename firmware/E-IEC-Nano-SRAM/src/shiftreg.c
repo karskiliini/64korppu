@@ -34,12 +34,17 @@ void shiftreg_init(void) {
     SR_RCLK_DDR |= (1 << SR_RCLK_PIN);
     SR_RCLK_PORT &= ~(1 << SR_RCLK_PIN);
 
-    /* Write default state (all deasserted) */
+    /* Write default state (all deasserted) BEFORE enabling outputs */
     sr_state = SR_DEFAULT;
     shiftreg_write(sr_state);
+
+    /* Now enable outputs: /OE LOW (safe because register has 0xFF) */
+    SR_OE_DDR |= (1 << SR_OE_PIN);   /* A3 as output */
+    SR_OE_PORT &= ~(1 << SR_OE_PIN); /* A3 = LOW = outputs enabled */
+
     TRACE("[SR] default=0x");
     uart_puthex8(sr_state);
-    TRACE("\r\n");
+    TRACE(" /OE=ON\r\n");
 }
 
 void shiftreg_write(uint8_t value) {

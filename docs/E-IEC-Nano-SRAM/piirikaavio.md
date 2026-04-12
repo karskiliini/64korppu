@@ -107,19 +107,27 @@
   /DENSITY ←───┤1 QB  VCC├───── +5V
                │        16│
   /MOTEA   ←───┤2 QC  QA ├───── /SIDE1 (→ IDC pin 32)
-               │        15│
-  /DRVSEL  ←───┤3 QD  SER├───── D11 (MOSI, jaettu SRAM:n kanssa)
-               │        14│
-  /MOTOR   ←───┤4 QE RCLK├───── D6  (Latch clock, oma GPIO!)
-               │        12│
-  /DIR     ←───┤5 QF SRCK├───── D13 (SCK, jaettu SRAM:n kanssa)
-               │        11│
-  /STEP    ←───┤6 QG /CLR├───── +5V (ei clearata, vedetään HIGH)
-               │        10│
-  /WGATE   ←───┤7 QH  /OE├───── GND (output aina aktiivinen)
-               │         9│
-  GND ─────────┤8 GND QH'├───── (ei käytetä, kaskadointiin)
+               │        15│                    ┌── 10kΩ ── +5V
+  /DRVSEL  ←───┤3 QD  SER├───── D11 (MOSI)    │  (pull-up: tri-state
+               │        14│                    │   bootissa kunnes
+  /MOTOR   ←───┤4 QE RCLK├───── D6 ��─┬────    │   firmware aktivoi)
+               │        12│          │         │
+  /DIR     ←───┤5 QF SRCK├───── D13  10kΩ     │
+               │        11│          │         │
+  /STEP    ←───┤6 QG /CLR├───── +5V  GND      │
+               │        10│   (pull-down:      │
+  /WGATE   ←───┤7 QH  /OE├───── A3 ──┘──���─────┘
+               │         9│   (firmware ohjaa LOW kun valmis)
+  GND ─────────┤8 GND QH'├───── (ei käytetä)
                └──────────┘
+
+  Boot-turvallisuus:
+  - RCLK:n 10kΩ pull-down estää vahingollisen latchin ennen
+    kuin firmware alustaa D6:n output LOW:ksi
+  - /OE:n 10kΩ pull-up pitää lähdöt tri-state (high-Z) kunnes
+    firmware ajaa A3:n LOW. Floppy-aseman omat pull-upit pitävät
+    signaalit HIGH (deasserted) tri-state-aikana.
+  - /WGATE ei voi vahingossa mennä päälle boot/reset-hetkellä
 
   Toiminta:
   1. Arduino lähettää 8 bittiä SPI:llä (MOSI + SCK)
@@ -251,7 +259,7 @@
     CLK      D3  [6] │                      │ [25] A6
     DATA     D4  [7] │                      │ [24] A5 ← LED
     RESET    D5  [8] │                      │ [23] A4 (vapaa)
-    595LATCH D6  [9] │                      │ [22] A3 (vapaa)
+    595LATCH D6  [9] │                      │ [22] A3 → 595 /OE
     WDATA    D7 [10] │                      │ [21] A2 ← /DSKCHG
     RDATA    D8 [11] │(ICP1)                │ [20] A1 ← /WPT
     (vapaa)  D9 [12] │                      │ [19] A0 ← /TRK00
@@ -272,7 +280,8 @@
     D10:     23LC512 /CS
     D11-D13: SPI (MOSI, MISO, SCK) → SRAM + 595
     A0-A2:   Floppy input (/TRK00, /WPT, /DSKCHG)
-    A3-A4:   Vapaat
+    A3:      74HC595 /OE (output enable, active LOW)
+    A4:      Vapaa
     A5:      Status LED
 ```
 
@@ -389,7 +398,7 @@
    3   74HC595                DIP-16         1   8-bit shift register
    4   Vastus 100Ω            1/4W           4   IEC-suojavastukset
    5   Vastus 4.7kΩ           1/4W           3   IEC pull-up (valinnainen)
-   6   Vastus 10kΩ            1/4W           4   Floppy input pull-up
+   6   Vastus 10kΩ            1/4W           6   Floppy pull-up (4) + RCLK pull-down (1) + /OE pull-up (1)
    7   Vastus 330Ω            1/4W           1   LED-vastus
    8   Kond. 100nF            keraami.       3   Bypass (Nano, SRAM, 595)
    9   Kond. 10µF             elektrol.      1   Bulk virta
