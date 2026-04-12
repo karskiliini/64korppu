@@ -28,6 +28,13 @@ static volatile uint8_t pulse_pack;
 static volatile uint8_t pulse_in_pack;
 static volatile bool capture_done;
 
+/* ---- Dynamic MFM thresholds (ISR reads these) ---- */
+
+static volatile uint16_t mfm_thr_short;
+static volatile uint16_t mfm_thr_medium;
+static volatile uint16_t mfm_thr_long;
+static volatile uint16_t mfm_adaptive_bump;  /* replaces hardcoded +24 */
+
 /* ---- Write state ---- */
 
 static uint8_t write_prev_bit;
@@ -61,6 +68,12 @@ void mfm_init(void) {
 
     /* Disable capture interrupt initially */
     TIMSK1 &= ~(1 << ICIE1);
+
+    /* Initialize dynamic thresholds from compile-time defaults */
+    mfm_thr_short  = MFM_THRESHOLD_SHORT;
+    mfm_thr_medium = MFM_THRESHOLD_MEDIUM;
+    mfm_thr_long   = MFM_THRESHOLD_LONG;
+    mfm_adaptive_bump = 24;
 }
 
 /* ---- Capture (ISR-driven, track → SRAM) ---- */
@@ -86,14 +99,14 @@ ISR(TIMER1_CAPT_vect) {
      * after short recovery to correctly classify delayed 2T as 2T.
      *
      * After 4T+ (long recovery): standard thresholds
-     * After 2T/3T (short recovery): raised thresholds (+24 ticks)
+     * After 2T/3T (short recovery): raised thresholds (calibrated bump)
      */
-    uint16_t thr_short = MFM_THRESHOLD_SHORT;
-    uint16_t thr_medium = MFM_THRESHOLD_MEDIUM;
-    uint16_t thr_long = MFM_THRESHOLD_LONG;
+    uint16_t thr_short = mfm_thr_short;
+    uint16_t thr_medium = mfm_thr_medium;
+    uint16_t thr_long = mfm_thr_long;
 
     if (prev_code <= 1) {  /* Previous was 2T or 3T → short recovery */
-        thr_short += 24;  /* Only 2T/3T boundary shifts; 3T/4T stays fixed */
+        thr_short += mfm_adaptive_bump;
     }
 
     uint8_t code;
@@ -122,6 +135,120 @@ ISR(TIMER1_CAPT_vect) {
         TIMSK1 &= ~(1 << ICIE1);
         capture_done = true;
     }
+}
+
+/*
+ * Calibrate MFM thresholds from raw_intervals[].
+ *
+ * Algorithm: histogram with 16 bins covering ticks 50..250 (bin width=12).
+ * Find the 3 highest bins → cluster centers for 2T, 3T, 4T.
+ * Set thresholds at midpoints between adjacent centers.
+ * Also calibrate the adaptive bump = (3T_center - 2T_center) / 2.
+ */
+static void mfm_calibrate_thresholds(void) {
+    #define CAL_BIN_COUNT  16
+    #define CAL_BIN_MIN    50
+    #define CAL_BIN_MAX   242   /* 50 + 16*12 = 242 */
+    #define CAL_BIN_WIDTH  12
+
+    uint16_t bins[CAL_BIN_COUNT];
+    uint16_t count = raw_interval_idx;
+
+    if (count < 30) {
+        TRACE("[MFM] cal: too few samples\r\n");
+        return;
+    }
+
+    /* Clear bins */
+    for (uint8_t i = 0; i < CAL_BIN_COUNT; i++) bins[i] = 0;
+
+    /* Build histogram */
+    for (uint16_t i = 0; i < count; i++) {
+        uint16_t v = raw_intervals[i];
+        if (v >= CAL_BIN_MIN && v < CAL_BIN_MAX) {
+            uint8_t b = (uint8_t)((v - CAL_BIN_MIN) / CAL_BIN_WIDTH);
+            bins[b]++;
+        }
+    }
+
+    /* Find the 3 highest bins (must be separated by at least 1 bin) */
+    uint8_t peak[3] = {0, 0, 0};
+    uint16_t peak_val[3] = {0, 0, 0};
+
+    for (uint8_t pass = 0; pass < 3; pass++) {
+        uint16_t best = 0;
+        uint8_t best_i = 0;
+        for (uint8_t i = 0; i < CAL_BIN_COUNT; i++) {
+            if (bins[i] > best) {
+                /* Check not adjacent to an already-found peak */
+                bool too_close = false;
+                for (uint8_t p = 0; p < pass; p++) {
+                    int8_t diff = (int8_t)i - (int8_t)peak[p];
+                    if (diff < 0) diff = -diff;
+                    if (diff <= 1) { too_close = true; break; }
+                }
+                if (!too_close) {
+                    best = bins[i];
+                    best_i = i;
+                }
+            }
+        }
+        peak[pass] = best_i;
+        peak_val[pass] = best;
+    }
+
+    /* Sort peaks by bin index (ascending → 2T, 3T, 4T) */
+    for (uint8_t i = 0; i < 2; i++) {
+        for (uint8_t j = i + 1; j < 3; j++) {
+            if (peak[j] < peak[i]) {
+                uint8_t tmp = peak[i]; peak[i] = peak[j]; peak[j] = tmp;
+                uint16_t tv = peak_val[i]; peak_val[i] = peak_val[j]; peak_val[j] = tv;
+            }
+        }
+    }
+
+    /* Validate: need at least some counts in each peak */
+    if (peak_val[0] < 3 || peak_val[1] < 3 || peak_val[2] < 3) {
+        TRACE("[MFM] cal: weak clusters, keeping defaults\r\n");
+        return;
+    }
+
+    /* Compute cluster centers (center of each bin) */
+    uint16_t center_2t = CAL_BIN_MIN + (uint16_t)peak[0] * CAL_BIN_WIDTH + CAL_BIN_WIDTH / 2;
+    uint16_t center_3t = CAL_BIN_MIN + (uint16_t)peak[1] * CAL_BIN_WIDTH + CAL_BIN_WIDTH / 2;
+    uint16_t center_4t = CAL_BIN_MIN + (uint16_t)peak[2] * CAL_BIN_WIDTH + CAL_BIN_WIDTH / 2;
+
+    /* Thresholds at midpoints between clusters */
+    uint16_t thr_s = (center_2t + center_3t) / 2;
+    uint16_t thr_m = (center_3t + center_4t) / 2;
+    /* Long threshold: 4T center + half the 3T-4T gap */
+    uint16_t thr_l = center_4t + (center_4t - center_3t) / 2;
+
+    /* Adaptive bump: half the gap between 2T and 3T */
+    uint16_t bump = (center_3t - center_2t) / 2;
+    if (bump < 4) bump = 4;
+    if (bump > 40) bump = 40;
+
+    /* Apply calibrated values */
+    mfm_thr_short  = thr_s;
+    mfm_thr_medium = thr_m;
+    mfm_thr_long   = thr_l;
+    mfm_adaptive_bump = bump;
+
+    /* Print results */
+    TRACE("[MFM] cal: 2T=");
+    uart_putdec(center_2t);
+    TRACE(" 3T=");
+    uart_putdec(center_3t);
+    TRACE(" 4T=");
+    uart_putdec(center_4t);
+    TRACE(" thr=");
+    uart_putdec(thr_s);
+    TRACE("/");
+    uart_putdec(thr_m);
+    TRACE(" bump=");
+    uart_putdec(bump);
+    TRACE("\r\n");
 }
 
 int mfm_capture_track(void) {
@@ -193,6 +320,9 @@ int mfm_capture_track(void) {
         if ((i % 12) == 11) TRACE("\r\n");
     }
     TRACE("\r\n");
+
+    /* Calibrate ISR thresholds from raw pulse intervals */
+    mfm_calibrate_thresholds();
 
     return FLOPPY_OK;
 }
@@ -529,9 +659,9 @@ static uint8_t mfm_poll_pulse(void) {
     uint16_t interval = ICR1 - prev_capture;
     prev_capture = ICR1;
 
-    if (interval < MFM_THRESHOLD_SHORT) return 0;
-    if (interval < MFM_THRESHOLD_MEDIUM) return 1;
-    if (interval < MFM_THRESHOLD_LONG) return 2;
+    if (interval < mfm_thr_short) return 0;
+    if (interval < mfm_thr_medium) return 1;
+    if (interval < mfm_thr_long) return 2;
     return 3;
 }
 
