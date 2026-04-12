@@ -12,10 +12,12 @@
 #include <string.h>
 
 /*
- * MFM codec for ATmega328P.
+ * MFM codec for ATmega328P — raw interval architecture.
  *
- * Read:   Timer1 ICP1 (D8) captures flux transitions → SRAM.
- * Decode: Reconstruct MFM bitstream from SRAM, extract sectors.
+ * Read:   Timer1 ICP1 (D8) captures flux transitions as raw uint8_t
+ *         timer intervals → stored sequentially in external SRAM.
+ * Decode: Read intervals back from SRAM, calibrate delay+offset
+ *         via brute-force, then decode MFM adaptively.
  * Write:  Poll ICP1 to find sector position, then generate MFM
  *         pulses on /WDATA (D7) using Timer1 OC1A for bit-cell timing.
  */
@@ -24,20 +26,22 @@
 
 static volatile uint16_t prev_capture;
 static volatile uint32_t capture_count;
-static volatile uint8_t pulse_pack;
-static volatile uint8_t pulse_in_pack;
 static volatile bool capture_done;
 
-/* ---- Dynamic MFM thresholds (ISR reads these) ---- */
+/* ---- Calibration results (set after capture, used by decoder) ---- */
 
-static volatile uint16_t mfm_thr_short;
-static volatile uint16_t mfm_thr_medium;
-static volatile uint16_t mfm_thr_long;
-static volatile uint16_t mfm_adaptive_bump;  /* replaces hardcoded +24 */
+static uint8_t cal_delay;      /* Best delay value from brute-force calibration */
+static uint8_t cal_offset;     /* Best bit offset (0 or 1) */
 
 /* ---- Write state ---- */
 
 static uint8_t write_prev_bit;
+
+/* ---- Dynamic MFM thresholds (used by write-side polling only) ---- */
+
+static volatile uint16_t mfm_thr_short;
+static volatile uint16_t mfm_thr_medium;
+static volatile uint16_t mfm_thr_long;
 
 /* ---- CRC ---- */
 
@@ -69,204 +73,155 @@ void mfm_init(void) {
     /* Disable capture interrupt initially */
     TIMSK1 &= ~(1 << ICIE1);
 
-    /* Initialize dynamic thresholds from compile-time defaults */
+    /* Initialize thresholds for write-side polling (from compile-time defaults) */
     mfm_thr_short  = MFM_THRESHOLD_SHORT;
     mfm_thr_medium = MFM_THRESHOLD_MEDIUM;
     mfm_thr_long   = MFM_THRESHOLD_LONG;
-    mfm_adaptive_bump = 24;
+
+    /* Default calibration values (overwritten after first capture) */
+    cal_delay  = MFM_PULLUP_DELAY;
+    cal_offset = 1;
 }
 
-/* ---- Capture (ISR-driven, track → SRAM) ---- */
+/* ---- Capture ISR: store raw uint8_t intervals to SRAM ---- */
 
-/* Raw interval capture for first N pulses (debug) */
-#define RAW_INTERVAL_COUNT 200
-static volatile uint16_t raw_intervals[RAW_INTERVAL_COUNT];
-static volatile uint16_t raw_interval_idx;
-static volatile uint8_t prev_code;
-
+/*
+ * Minimal ISR: compute interval, store low byte to SRAM via SPI.
+ * No classification, no packing — just raw timer ticks.
+ * Intervals are always < 256 ticks at 16MHz / HD 500kbps.
+ */
 ISR(TIMER1_CAPT_vect) {
-    uint16_t interval = ICR1 - prev_capture;
-    prev_capture = ICR1;
+    uint16_t ts = ICR1;
+    uint16_t interval = ts - prev_capture;
+    prev_capture = ts;
 
-    /* Store raw interval for debug */
-    if (raw_interval_idx < RAW_INTERVAL_COUNT) {
-        raw_intervals[raw_interval_idx++] = interval;
-    }
+    /* Store low byte — intervals are < 256 for valid MFM pulses */
+    SPDR = (uint8_t)interval;
+    while (!(SPSR & (1 << SPIF)));
+    capture_count++;
 
-    /*
-     * Adaptive thresholds: after a short interval (2T/3T), the signal
-     * recovers less → next interval appears longer. Raise thresholds
-     * after short recovery to correctly classify delayed 2T as 2T.
-     *
-     * After 4T+ (long recovery): standard thresholds
-     * After 2T/3T (short recovery): raised thresholds (calibrated bump)
-     */
-    uint16_t thr_short = mfm_thr_short;
-    uint16_t thr_medium = mfm_thr_medium;
-    uint16_t thr_long = mfm_thr_long;
-
-    if (prev_code <= 1) {  /* Previous was 2T or 3T → short recovery */
-        thr_short += mfm_adaptive_bump;
-    }
-
-    uint8_t code;
-    if (interval < thr_short) {
-        code = 0;  /* 2T */
-    } else if (interval < thr_medium) {
-        code = 1;  /* 3T */
-    } else if (interval < thr_long) {
-        code = 2;  /* 4T */
-    } else {
-        code = 3;  /* Invalid/gap */
-    }
-    prev_code = code;
-
-    pulse_pack = (pulse_pack << 2) | code;
-    pulse_in_pack++;
-
-    if (pulse_in_pack >= 4) {
-        SPDR = pulse_pack;
-        while (!(SPSR & (1 << SPIF)));
-        capture_count++;
-        pulse_in_pack = 0;
-    }
-
-    if (capture_count >= (SRAM_MFM_TRACK_SIZE - 16)) {
+    if (capture_count >= SRAM_RAW_CAPTURE_SIZE) {
         TIMSK1 &= ~(1 << ICIE1);
         capture_done = true;
     }
 }
 
+/* ---- Brute-force calibration ---- */
+
 /*
- * Calibrate MFM thresholds from raw_intervals[].
+ * Try all delay values 50..120 and both offsets 0..1.
+ * For each combination, classify first CAL_SAMPLE_COUNT intervals,
+ * build MFM bitstream, extract bytes, and score by recognizing
+ * standard MFM gap/sync/marker bytes.
  *
- * Algorithm: histogram with 16 bins covering ticks 50..250 (bin width=12).
- * Find the 3 highest bins → cluster centers for 2T, 3T, 4T.
- * Set thresholds at midpoints between adjacent centers.
- * Also calibrate the adaptive bump = (3T_center - 2T_center) / 2.
+ * Reads raw intervals from SRAM via sequential read.
  */
-static void mfm_calibrate_thresholds(void) {
-    #define CAL_BIN_COUNT  16
-    #define CAL_BIN_MIN    50
-    #define CAL_BIN_MAX   242   /* 50 + 16*12 = 242 */
-    #define CAL_BIN_WIDTH  12
+#define CAL_SAMPLE_COUNT  1000
+#define CAL_BYTE_COUNT    64     /* Max bytes to extract per trial */
 
-    uint16_t bins[CAL_BIN_COUNT];
-    uint16_t count = raw_interval_idx;
+static void mfm_calibrate(void) {
+    uint16_t best_score = 0;
+    uint8_t best_delay = MFM_PULLUP_DELAY;
+    uint8_t best_offset = 1;
 
-    if (count < 30) {
-        TRACE("[MFM] cal: too few samples\r\n");
-        return;
-    }
+    /* Read first CAL_SAMPLE_COUNT intervals into a small
+     * working window. We can't keep all 1000 in RAM on AVR,
+     * so we re-read from SRAM for each delay trial.
+     * This is slow but only done once per track. */
 
-    /* Clear bins */
-    for (uint8_t i = 0; i < CAL_BIN_COUNT; i++) bins[i] = 0;
+    for (uint8_t delay = 50; delay <= 120; delay++) {
+        for (uint8_t offset = 0; offset <= 1; offset++) {
+            uint16_t score = 0;
 
-    /* Build histogram */
-    for (uint16_t i = 0; i < count; i++) {
-        uint16_t v = raw_intervals[i];
-        if (v >= CAL_BIN_MIN && v < CAL_BIN_MAX) {
-            uint8_t b = (uint8_t)((v - CAL_BIN_MIN) / CAL_BIN_WIDTH);
-            bins[b]++;
-        }
-    }
+            sram_begin_seq_read(SRAM_RAW_CAPTURE);
 
-    /* Find the 3 highest bins (must be separated by at least 1 bin) */
-    uint8_t peak[3] = {0, 0, 0};
-    uint16_t peak_val[3] = {0, 0, 0};
+            uint32_t raw_bits = 0;
+            uint8_t raw_avail = 0;
+            uint8_t dbyte = 0;
+            uint8_t dbits = 0;
 
-    for (uint8_t pass = 0; pass < 3; pass++) {
-        uint16_t best = 0;
-        uint8_t best_i = 0;
-        for (uint8_t i = 0; i < CAL_BIN_COUNT; i++) {
-            if (bins[i] > best) {
-                /* Check not adjacent to an already-found peak */
-                bool too_close = false;
-                for (uint8_t p = 0; p < pass; p++) {
-                    int8_t diff = (int8_t)i - (int8_t)peak[p];
-                    if (diff < 0) diff = -diff;
-                    if (diff <= 1) { too_close = true; break; }
+            for (uint16_t i = 0; i < CAL_SAMPLE_COUNT; i++) {
+                uint8_t interval = sram_seq_read_byte();
+
+                /* Classify: cells = (interval - delay + 16) / 32 */
+                int16_t adj = (int16_t)interval - (int16_t)delay + 16;
+                uint8_t cells;
+                if (adj < 0) {
+                    cells = 2;  /* Clamp minimum */
+                } else {
+                    cells = (uint8_t)(adj / 32);
+                    if (cells < 2) cells = 2;
+                    if (cells > 4) continue;  /* Skip invalid */
                 }
-                if (!too_close) {
-                    best = bins[i];
-                    best_i = i;
+
+                /* Add to MFM bitstream: shift by cells, set LSB */
+                raw_bits = (raw_bits << cells) | 1;
+                raw_avail += cells;
+                if (raw_avail > 30) raw_avail = 30;
+
+                /* Extract data bits at given offset */
+                while (raw_avail >= 2) {
+                    raw_avail -= 2;
+                    uint8_t data_bit = (raw_bits >> (raw_avail + offset)) & 1;
+                    dbyte = (dbyte << 1) | data_bit;
+                    dbits++;
+                    if (dbits >= 8) {
+                        /* Score recognized bytes */
+                        switch (dbyte) {
+                            case 0x4E: score += 10; break;  /* Gap fill */
+                            case 0x00: score += 5;  break;  /* Preamble */
+                            case 0xA1: score += 20; break;  /* Sync mark */
+                            case 0xFE: score += 15; break;  /* IDAM */
+                            case 0xFB: score += 15; break;  /* DAM */
+                        }
+                        dbyte = 0;
+                        dbits = 0;
+                    }
                 }
             }
-        }
-        peak[pass] = best_i;
-        peak_val[pass] = best;
-    }
 
-    /* Sort peaks by bin index (ascending → 2T, 3T, 4T) */
-    for (uint8_t i = 0; i < 2; i++) {
-        for (uint8_t j = i + 1; j < 3; j++) {
-            if (peak[j] < peak[i]) {
-                uint8_t tmp = peak[i]; peak[i] = peak[j]; peak[j] = tmp;
-                uint16_t tv = peak_val[i]; peak_val[i] = peak_val[j]; peak_val[j] = tv;
+            sram_end_seq();
+
+            if (score > best_score) {
+                best_score = score;
+                best_delay = delay;
+                best_offset = offset;
             }
         }
     }
 
-    /* Validate: need at least some counts in each peak */
-    if (peak_val[0] < 3 || peak_val[1] < 3 || peak_val[2] < 3) {
-        TRACE("[MFM] cal: weak clusters, keeping defaults\r\n");
-        return;
-    }
+    cal_delay = best_delay;
+    cal_offset = best_offset;
 
-    /* Compute cluster centers (center of each bin) */
-    uint16_t center_2t = CAL_BIN_MIN + (uint16_t)peak[0] * CAL_BIN_WIDTH + CAL_BIN_WIDTH / 2;
-    uint16_t center_3t = CAL_BIN_MIN + (uint16_t)peak[1] * CAL_BIN_WIDTH + CAL_BIN_WIDTH / 2;
-    uint16_t center_4t = CAL_BIN_MIN + (uint16_t)peak[2] * CAL_BIN_WIDTH + CAL_BIN_WIDTH / 2;
-
-    /* Thresholds at midpoints between clusters */
-    uint16_t thr_s = (center_2t + center_3t) / 2;
-    uint16_t thr_m = (center_3t + center_4t) / 2;
-    /* Long threshold: 4T center + half the 3T-4T gap */
-    uint16_t thr_l = center_4t + (center_4t - center_3t) / 2;
-
-    /* Adaptive bump: half the gap between 2T and 3T */
-    uint16_t bump = (center_3t - center_2t) / 2;
-    if (bump < 4) bump = 4;
-    if (bump > 40) bump = 40;
-
-    /* Apply calibrated values */
-    mfm_thr_short  = thr_s;
-    mfm_thr_medium = thr_m;
-    mfm_thr_long   = thr_l;
-    mfm_adaptive_bump = bump;
-
-    /* Print results */
-    TRACE("[MFM] cal: 2T=");
-    uart_putdec(center_2t);
-    TRACE(" 3T=");
-    uart_putdec(center_3t);
-    TRACE(" 4T=");
-    uart_putdec(center_4t);
-    TRACE(" thr=");
-    uart_putdec(thr_s);
-    TRACE("/");
-    uart_putdec(thr_m);
-    TRACE(" bump=");
-    uart_putdec(bump);
+    TRACE("[MFM] cal: best delay=");
+    uart_putdec(best_delay);
+    TRACE(" off=");
+    uart_putdec(best_offset);
+    TRACE(" score=");
+    uart_putdec(best_score);
     TRACE("\r\n");
 }
+
+/* ---- Capture track ---- */
 
 int mfm_capture_track(void) {
     TRACE("[MFM] capture start\r\n");
 
     capture_count = 0;
-    pulse_pack = 0;
-    pulse_in_pack = 0;
     capture_done = false;
-    raw_interval_idx = 0;
-    prev_code = 2;  /* Assume long recovery at start */
 
-    sram_begin_seq_write(SRAM_MFM_TRACK);
+    /* Start sequential SRAM write at raw capture buffer */
+    sram_begin_seq_write(SRAM_RAW_CAPTURE);
+
+    /* Clear pending capture flag, seed prev_capture */
     TIFR1 |= (1 << ICF1);
     prev_capture = ICR1;
+
+    /* Enable input capture interrupt */
     TIMSK1 |= (1 << ICIE1);
     sei();
 
+    /* Wait for capture to complete or timeout */
     uint16_t timeout = 0;
     while (!capture_done && timeout < 500) {
         _delay_ms(1);
@@ -278,7 +233,7 @@ int mfm_capture_track(void) {
 
     TRACE("[MFM] capture: ");
     uart_putdec((uint16_t)capture_count);
-    TRACE(" packs, ");
+    TRACE(" intervals, ");
     uart_putdec(timeout);
     TRACE("ms\r\n");
 
@@ -287,81 +242,78 @@ int mfm_capture_track(void) {
         return FLOPPY_ERR_TIMEOUT;
     }
 
-    /* Pulse code histogram: count 2T/3T/4T/invalid distribution */
+    /* Raw interval histogram: 8 bins covering 0..255 (bin width = 32) */
     {
-        uint16_t hist[4] = {0, 0, 0, 0};
-        sram_begin_seq_read(SRAM_MFM_TRACK);
+        uint16_t hist[8] = {0, 0, 0, 0, 0, 0, 0, 0};
         uint16_t scan = (capture_count > 500) ? 500 : (uint16_t)capture_count;
+
+        sram_begin_seq_read(SRAM_RAW_CAPTURE);
         for (uint16_t i = 0; i < scan; i++) {
-            uint8_t packed = sram_seq_read_byte();
-            for (int p = 3; p >= 0; p--) {
-                hist[(packed >> (p * 2)) & 0x03]++;
-            }
+            uint8_t v = sram_seq_read_byte();
+            uint8_t bin = v >> 5;  /* v / 32 */
+            if (bin < 8) hist[bin]++;
         }
         sram_end_seq();
-        TRACE("[MFM] hist 2T=");
-        uart_putdec(hist[0]);
-        TRACE(" 3T=");
-        uart_putdec(hist[1]);
-        TRACE(" 4T=");
-        uart_putdec(hist[2]);
-        TRACE(" inv=");
-        uart_putdec(hist[3]);
+
+        TRACE("[MFM] hist:");
+        for (uint8_t b = 0; b < 8; b++) {
+            uart_putchar(' ');
+            uart_putdec((uint16_t)b * 32);
+            uart_putchar('-');
+            uart_putdec((uint16_t)(b + 1) * 32 - 1);
+            uart_putchar('=');
+            uart_putdec(hist[b]);
+        }
         TRACE("\r\n");
     }
 
-    /* Calibrate ISR thresholds from raw pulse intervals */
-    mfm_calibrate_thresholds();
+    /* Brute-force calibration on first 1000 intervals */
+    mfm_calibrate();
 
-    /* Human-readable decode of first 200 raw intervals:
-     * 1. Pulse codes: 2/3/4/? per pulse
-     * 2. Decoded bytes at both alignments */
-    if (raw_interval_idx >= 20) {
-        /* Use calibrated thresholds for classification */
-        uint16_t ts = mfm_thr_short;
-        uint16_t tm = mfm_thr_medium;
-        uint16_t tl = mfm_thr_long;
+    /* Dump first 200 decoded bytes using calibrated delay+offset.
+     * Covers ~3 sectors — should show 4E gap, 00 preamble, A1 sync, FE IDAM. */
+    {
+        uint16_t sample = (capture_count > 10000) ? 10000 : (uint16_t)capture_count;
+        sram_begin_seq_read(SRAM_RAW_CAPTURE);
+        uint32_t raw_bits = 0;
+        uint8_t avail = 0, dbyte = 0, dbits = 0;
+        uint16_t dcount = 0;
 
-        /* Print pulse codes */
-        TRACE("[MFM] codes: ");
-        for (uint16_t i = 0; i < raw_interval_idx; i++) {
-            uint16_t v = raw_intervals[i];
-            if (v < ts)      uart_putchar('2');
-            else if (v < tm) uart_putchar('3');
-            else if (v < tl) uart_putchar('4');
-            else             uart_putchar('?');
-            if ((i % 64) == 63) TRACE("\r\n");
-        }
-        TRACE("\r\n");
+        TRACE("[MFM] decoded (first 200 bytes, delay=");
+        uart_putdec(cal_delay);
+        TRACE(" off=");
+        uart_putdec(cal_offset);
+        TRACE("):\r\n");
 
-        /* Decode bytes at both offsets using calibrated thresholds */
-        for (uint8_t off = 0; off <= 1; off++) {
-            TRACE("[MFM] bytes off=");
-            uart_putdec(off);
-            TRACE(": ");
-            uint32_t bits = 0;
-            uint8_t avail = 0;
-            uint8_t dbyte = 0, dbits = 0, dcount = 0;
-            for (uint16_t i = 0; i < raw_interval_idx && dcount < 24; i++) {
-                uint16_t v = raw_intervals[i];
-                if (v < ts)       { bits = (bits << 2) | 0x01; avail += 2; }
-                else if (v < tm)  { bits = (bits << 3) | 0x01; avail += 3; }
-                else if (v < tl)  { bits = (bits << 4) | 0x01; avail += 4; }
-                else continue;
-                if (avail > 30) avail = 30;
-                while (avail >= 2 && dcount < 24) {
-                    avail -= 2;
-                    dbyte = (dbyte << 1) | ((bits >> (avail + off)) & 1);
-                    dbits++;
-                    if (dbits >= 8) {
-                        uart_puthex8(dbyte);
-                        uart_putchar(' ');
-                        dbyte = 0; dbits = 0; dcount++;
-                    }
+        for (uint16_t i = 0; i < sample && dcount < 200; i++) {
+            uint8_t v = sram_seq_read_byte();
+            int16_t adj = (int16_t)v - (int16_t)cal_delay + 16;
+            uint8_t cells;
+            if (adj < 32) cells = 2;
+            else {
+                cells = (uint8_t)(adj / 32);
+                if (cells > 4) continue;
+            }
+
+            raw_bits = (raw_bits << cells) | 1;
+            avail += cells;
+            if (avail > 30) avail = 30;
+
+            while (avail >= 2 && dcount < 200) {
+                avail -= 2;
+                dbyte = (dbyte << 1) | ((raw_bits >> (avail + cal_offset)) & 1);
+                dbits++;
+                if (dbits >= 8) {
+                    uart_puthex8(dbyte);
+                    uart_putchar(' ');
+                    dcount++;
+                    if ((dcount % 24) == 0) TRACE("\r\n");
+                    dbyte = 0; dbits = 0;
                 }
             }
-            TRACE("\r\n");
         }
+        sram_end_seq();
+        TRACE("\r\n");
     }
 
     return FLOPPY_OK;
@@ -370,33 +322,30 @@ int mfm_capture_track(void) {
 /* ---- Decode (SRAM → sector data) ---- */
 
 /*
- * MFM raw sync pattern: 0x4489 (A1 with missing clock).
- * Only 0x4489 is reliable — 0x44A9 (normal A1) causes false matches.
- */
-#define MFM_RAW_SYNC  0x4489
-
-/*
  * Decode state machine.
- * All data flows through one pulse-processing loop — no separate
- * function calls that could desync the SRAM read position.
+ * Reads raw uint8_t intervals from SRAM, classifies using calibrated
+ * delay, builds MFM bitstream, extracts data bytes at calibrated offset,
+ * and uses brute-force IDAM search to find sector headers.
  */
 typedef enum {
-    DEC_SCAN_SYNC,   /* Looking for 0x4489 raw pattern */
-    DEC_READ_MARK,   /* Extracting address mark byte after 3x sync */
-    DEC_READ_ID,     /* Extracting 4 sector ID bytes */
-    DEC_READ_DATA,   /* Extracting 512 data bytes */
+    DEC_SCAN_SYNC,   /* Looking for IDAM (0xFE) via brute-force alignment */
+    DEC_READ_ID,     /* Extracting 4 sector ID bytes (T, S, R, N) */
+    DEC_READ_DATA,   /* Extracting 512 data bytes after DAM */
 } decode_state_t;
 
 int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
     TRACE("[MFM] decode sector ");
     uart_putdec(sector);
-    TRACE(", scan ");
+    TRACE(", ");
     uart_putdec((uint16_t)capture_count);
-    TRACE(" packs\r\n");
+    TRACE(" intervals, delay=");
+    uart_putdec(cal_delay);
+    TRACE(" off=");
+    uart_putdec(cal_offset);
+    TRACE("\r\n");
 
     uint32_t raw_bits = 0;
     uint8_t raw_avail = 0;
-    uint8_t sync_count = 0;
     bool found_sector = false;
 
     decode_state_t state = DEC_SCAN_SYNC;
@@ -405,191 +354,119 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
     uint8_t field_bytes[4];
     uint8_t field_pos = 0;
     uint16_t data_pos = 0;
-    uint32_t pulse_num = 0;
-    uint8_t preamble_count = 0;  /* Consecutive 0x5555 detections */
-    int8_t sync_dump = -1;       /* >0: dump this many more values after preamble */
-    uint8_t sync_dumps_done = 0; /* Limit to first 3 preambles */
+    uint8_t offset = cal_offset;
+    uint8_t delay = cal_delay;
 
-    sram_begin_seq_read(SRAM_MFM_TRACK);
+    sram_begin_seq_read(SRAM_RAW_CAPTURE);
 
-    for (uint32_t sram_pos = 0; sram_pos < capture_count; sram_pos++) {
-        uint8_t packed = sram_seq_read_byte();
+    for (uint32_t pos = 0; pos < capture_count; pos++) {
+        uint8_t interval = sram_seq_read_byte();
 
-        for (int p = 3; p >= 0; p--) {
-            uint8_t code = (packed >> (p * 2)) & 0x03;
-
-            switch (code) {
-                case 0: raw_bits = (raw_bits << 2) | 0x01; raw_avail += 2; break;
-                case 1: raw_bits = (raw_bits << 3) | 0x01; raw_avail += 3; break;
-                case 2: raw_bits = (raw_bits << 4) | 0x01; raw_avail += 4; break;
-                default: raw_bits = 0; raw_avail = 0;
-                         sync_count = 0; state = DEC_SCAN_SYNC;
-                         byte_bits = 0;
-                         continue;
+        /* Classify interval using calibrated delay */
+        int16_t adj = (int16_t)interval - (int16_t)delay + 16;
+        uint8_t cells;
+        if (adj < 0) {
+            cells = 2;  /* Clamp minimum */
+        } else {
+            cells = (uint8_t)(adj / 32);
+            if (cells < 2) cells = 2;
+            if (cells > 4) {
+                /* Invalid interval — reset state */
+                raw_bits = 0;
+                raw_avail = 0;
+                if (state == DEC_SCAN_SYNC) continue;
+                state = DEC_SCAN_SYNC;
+                byte_bits = 0;
+                continue;
             }
-            if (raw_avail > 30) raw_avail = 30;
-            pulse_num++;
+        }
 
-            /* Debug: detect preamble → extract bytes after it */
-            {
-                uint16_t bottom = (uint16_t)(raw_bits & 0xFFFF);
+        /* Add to MFM bitstream */
+        raw_bits = (raw_bits << cells) | 1;
+        raw_avail += cells;
+        if (raw_avail > 30) raw_avail = 30;
 
-                if (bottom == 0x5555) {
-                    preamble_count++;
-                } else {
-                    if (preamble_count >= 4 && sync_dumps_done < 2) {
-                        /* Preamble just ended — extract next 10 bytes */
-                        TRACE("\r\n[MFM] preamble end @");
-                        uart_putdec((uint16_t)pulse_num);
-                        TRACE(" (len=");
-                        uart_putdec(preamble_count);
-                        TRACE(")");
-                        /* Save position for two-pass extraction */
-                        uint32_t save_sram = sram_pos;
-                        uint32_t save_raw = raw_bits;
+        if (state == DEC_SCAN_SYNC) {
+            /*
+             * Brute-force marker search: extract byte at the calibrated
+             * offset from current raw_bits. Need 16 MFM bits = 8 data bits.
+             *
+             * When found_sector is false: look for IDAM (0xFE).
+             * When found_sector is true:  look for DAM (0xFB).
+             */
+            if (raw_avail >= 18) {
+                /* Extract byte at calibrated offset */
+                uint8_t test = 0;
+                for (uint8_t b = 0; b < 8; b++) {
+                    uint8_t bitpos = offset + (7 - b) * 2;
+                    test |= (uint8_t)(((raw_bits >> bitpos) & 1) << (7 - b));
+                }
+                if (!found_sector && test == MFM_IDAM) {
+                    /* Found IDAM marker -- switch to reading sector ID */
+                    state = DEC_READ_ID;
+                    field_pos = 0;
+                    byte_val = 0;
+                    byte_bits = 0;
+                    raw_avail = 0;  /* Reset: start fresh for ID bytes */
+                } else if (found_sector && test == MFM_DAM) {
+                    /* Found DAM after matching IDAM -- start reading data */
+                    state = DEC_READ_DATA;
+                    data_pos = 0;
+                    byte_val = 0;
+                    byte_bits = 0;
+                    raw_avail = 0;
+                }
+            }
+        } else {
+            /* States DEC_READ_ID / DEC_READ_DATA:
+             * Extract data bits from raw MFM stream at calibrated offset.
+             * Every 2 raw MFM bits = 1 data bit (clock+data pair). */
+            while (raw_avail >= 2) {
+                raw_avail -= 2;
+                uint8_t data_bit = (raw_bits >> (raw_avail + offset)) & 0x01;
+                byte_val = (byte_val << 1) | data_bit;
+                byte_bits++;
 
-                        for (uint8_t try_off = 0; try_off <= 1; try_off++) {
-                            TRACE(" [off");
-                            uart_putdec(try_off);
-                            TRACE("]:");
-                            uint32_t lr = save_raw;
-                            uint8_t db = 0, dn = 0, dc = 0, ta = 0;
-                            /* Re-read from saved position */
+                if (byte_bits >= 8) {
+                    /* Complete byte extracted */
+                    byte_bits = 0;
+
+                    if (state == DEC_READ_ID) {
+                        field_bytes[field_pos++] = byte_val;
+                        if (field_pos >= 4) {
+                            uint8_t t = field_bytes[0];
+                            uint8_t s = field_bytes[1];
+                            uint8_t r = field_bytes[2];
+                            uint8_t n = field_bytes[3];
+
+                            /* Validate: T=0-79, S=0-1, R=1-18, N=2 */
+                            if (t < 80 && s <= 1 && r >= 1 && r <= 18 && n == 2) {
+                                TRACE("[MFM] IDAM: T=");
+                                uart_putdec(t);
+                                TRACE(" S=");
+                                uart_putdec(s);
+                                TRACE(" R=");
+                                uart_putdec(r);
+                                TRACE("\r\n");
+                                if (r == sector) {
+                                    TRACE("[MFM] SECTOR MATCH!\r\n");
+                                    found_sector = true;
+                                    /* Continue scanning for DAM (0xFB) */
+                                }
+                            }
+                            /* Back to scanning (for DAM or next IDAM) */
+                            state = DEC_SCAN_SYNC;
+                            break;  /* Exit bit extraction, resume scanning */
+                        }
+                    } else if (state == DEC_READ_DATA) {
+                        data_out[data_pos++] = byte_val;
+                        if (data_pos >= 512) {
+                            TRACE("[MFM] decode OK, 512 bytes\r\n");
                             sram_end_seq();
-                            sram_begin_seq_read(SRAM_MFM_TRACK + save_sram);
-                            sram_pos = save_sram;
-                            while (dc < 32 && sram_pos < capture_count) {
-                                uint8_t pk = sram_seq_read_byte();
-                                sram_pos++;
-                                for (int pp = 3; pp >= 0 && dc < 32; pp--) {
-                                    uint8_t c2 = (pk >> (pp * 2)) & 0x03;
-                                    uint8_t a2;
-                                    switch (c2) {
-                                        case 0: lr = (lr << 2) | 0x01; a2 = 2; break;
-                                        case 1: lr = (lr << 3) | 0x01; a2 = 3; break;
-                                        case 2: lr = (lr << 4) | 0x01; a2 = 4; break;
-                                        default: a2 = 0; break;
-                                    }
-                                    ta += a2;
-                                    while (ta >= 2 && dc < 32) {
-                                        ta -= 2;
-                                        db = (db << 1) | ((lr >> (ta + try_off)) & 1);
-                                        dn += 2;
-                                        if (dn >= 16) {
-                                            uart_puthex8(db);
-                                            uart_putchar(' ');
-                                            db = 0; dn = 0; dc++;
-                                        }
-                                    }
-                                }
-                            }
-                            TRACE("\r\n");
-                        }
-                        sync_dumps_done++;
-                    }
-                    preamble_count = 0;
-                }
-            }
-
-            if (state == DEC_SCAN_SYNC) {
-                /*
-                 * Brute-force IDAM search: try all 8 even-bit alignments
-                 * in raw_bits. Extract 8 data bits (every other bit) at
-                 * each alignment. If we get 0xFE → found IDAM.
-                 *
-                 * Need 16 MFM bits (8 data bits) → check raw_avail >= 16.
-                 */
-                if (raw_avail >= 18) {
-                    for (uint8_t off = 0; off <= 14; off += 2) {
-                        uint8_t test = 0;
-                        for (uint8_t b = 0; b < 8; b++) {
-                            uint8_t pos = off + b * 2;
-                            test = (test << 1) | ((raw_bits >> pos) & 1);
-                        }
-                        if (test == MFM_IDAM) {
-                            /* Peek next 4 bytes to validate sector ID */
-                            /* Extract T, S, R, N at this alignment */
-                            uint8_t id[4];
-                            bool valid = true;
-                            uint32_t peek_raw = raw_bits;
-                            /* We need ~80 more MFM bits for 4 bytes.
-                             * For now, just lock alignment and validate
-                             * in READ_ID state. */
-                            state = DEC_READ_ID;
-                            field_pos = 0;
-                            byte_val = 0;
-                            byte_bits = 0;
-                            raw_avail = off;
-                            break;
+                            return FLOPPY_OK;
                         }
                     }
-                }
-            } else {
-                /* States DEC_READ_MARK / DEC_READ_ID / DEC_READ_DATA:
-                 * Extract data bits from raw MFM stream.
-                 * Every 2 raw MFM bits = 1 data bit (clock+data pair).
-                 * After sync alignment, bit at raw_avail pos = data bit. */
-                while (raw_avail >= 2) {
-                    raw_avail -= 2;
-                    uint8_t data_bit = (raw_bits >> raw_avail) & 0x01;
-                    byte_val = (byte_val << 1) | data_bit;
-                    byte_bits += 2;
-
-                    if (byte_bits >= 16) {
-                        /* Complete byte extracted */
-                        byte_bits = 0;
-
-                        if (state == DEC_READ_MARK) {
-                            TRACE("[MFM] mark=0x");
-                            uart_puthex8(byte_val);
-                            TRACE("\r\n");
-                            if (byte_val == MFM_IDAM) {
-                                state = DEC_READ_ID;
-                                field_pos = 0;
-                            } else if (byte_val == MFM_DAM && found_sector) {
-                                state = DEC_READ_DATA;
-                                data_pos = 0;
-                            } else {
-                                state = DEC_SCAN_SYNC;
-                                sync_count = 0;
-                            }
-                        } else if (state == DEC_READ_ID) {
-                            field_bytes[field_pos++] = byte_val;
-                            if (field_pos >= 4) {
-                                uint8_t t = field_bytes[0];
-                                uint8_t s = field_bytes[1];
-                                uint8_t r = field_bytes[2];
-                                uint8_t n = field_bytes[3];
-
-                                /* Validate: T=0-79, S=0-1, R=1-18, N=2 */
-                                if (t < 80 && s <= 1 && r >= 1 && r <= 18 && n == 2) {
-                                    TRACE("[MFM] VALID IDAM: T=");
-                                    uart_putdec(t);
-                                    TRACE(" S=");
-                                    uart_putdec(s);
-                                    TRACE(" R=");
-                                    uart_putdec(r);
-                                    TRACE(" @");
-                                    uart_putdec((uint16_t)pulse_num);
-                                    TRACE("\r\n");
-                                    if (r == sector) {
-                                        TRACE("[MFM] SECTOR MATCH!\r\n");
-                                        found_sector = true;
-                                    }
-                                }
-                                /* Invalid or non-matching: resume scanning */
-                                state = DEC_SCAN_SYNC;
-                            }
-                        } else if (state == DEC_READ_DATA) {
-                            data_out[data_pos++] = byte_val;
-                            if (data_pos >= 512) {
-                                TRACE("[MFM] decode OK, 512 bytes\r\n");
-                                sram_end_seq();
-                                return 0;
-                            }
-                        }
-                        byte_val = 0;
-                    }
+                    byte_val = 0;
                 }
             }
         }
@@ -606,20 +483,12 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
 
 int mfm_find_sectors(mfm_sector_id_t *ids_out, int max_ids) {
     int found = 0;
-    uint32_t raw_bits = 0;
-    uint8_t raw_avail = 0;
-    uint8_t sync_count = 0;
 
-    sram_begin_seq_read(SRAM_MFM_TRACK);
-    uint32_t sram_pos = 0;
-    uint32_t end_pos = capture_count;
+    /* TODO: implement using same raw-interval decode as mfm_decode_sector */
+    (void)ids_out;
+    (void)max_ids;
 
-    /* TODO: rewrite with state machine like mfm_decode_sector */
-    (void)raw_bits; (void)raw_avail; (void)sync_count;
-    (void)sram_pos; (void)end_pos;
-
-    sram_end_seq();
-    return 0;
+    return found;
 }
 
 /* ---- Write helpers ---- */
@@ -635,7 +504,7 @@ static inline void wdata_pulse(void) {
 }
 
 /*
- * Wait for one MFM bit cell (2µs = 32 Timer1 ticks at 16MHz).
+ * Wait for one MFM bit cell (2us = 32 Timer1 ticks at 16MHz).
  * Uses OC1A compare match for jitter-free timing.
  */
 static inline void wait_bit_cell(void) {
@@ -710,6 +579,8 @@ static uint8_t mfm_poll_pulse(void) {
  * Returns FLOPPY_OK when positioned right after the 4-byte sector ID.
  * Caller should then wait through CRC+gap2 before writing.
  */
+#define MFM_RAW_SYNC  0x4489
+
 static int mfm_wait_for_sector(uint8_t target_sector) {
     TRACE("[MFM] scan for sector ");
     uart_putdec(target_sector);
@@ -802,9 +673,9 @@ int mfm_write_sector(const mfm_sector_id_t *id, const uint8_t *data) {
     /*
      * Write data field of an existing sector:
      * 1. Poll /RDATA to find target IDAM in real-time
-     * 2. Wait through ID CRC (2 bytes) + gap2 (22 bytes) = 768µs
+     * 2. Wait through ID CRC (2 bytes) + gap2 (22 bytes) = 768us
      * 3. Assert /WGATE, disable interrupts
-     * 4. Write: 12×0x00 + 3×sync_A1 + DAM + 512×data + CRC + gap3
+     * 4. Write: 12x0x00 + 3xsync_A1 + DAM + 512xdata + CRC + gap3
      * 5. Release /WGATE, re-enable interrupts
      */
     TRACE("[MFM] write T=");
@@ -820,7 +691,7 @@ int mfm_write_sector(const mfm_sector_id_t *id, const uint8_t *data) {
     if (rc != FLOPPY_OK) return rc;
 
     /* Step 2: Wait through ID CRC (2 bytes) + gap2 (22 bytes)
-     * = 24 data bytes × 32µs/byte = 768µs */
+     * = 24 data bytes x 32us/byte = 768us */
     _delay_us(768);
 
     /* Step 3: Assert /WGATE (via shift register) */
@@ -834,12 +705,12 @@ int mfm_write_sector(const mfm_sector_id_t *id, const uint8_t *data) {
     TIFR1 = (1 << OCF1A);
 
     /* Step 4: Write data field */
-    /* Preamble: 12 × 0x00 */
+    /* Preamble: 12 x 0x00 */
     for (uint8_t i = 0; i < 12; i++) {
         mfm_write_data_byte(0x00);
     }
 
-    /* Sync: 3 × 0xA1 (with missing clock) */
+    /* Sync: 3 x 0xA1 (with missing clock) */
     mfm_write_sync_a1();
     mfm_write_sync_a1();
     mfm_write_sync_a1();
@@ -868,7 +739,7 @@ int mfm_write_sector(const mfm_sector_id_t *id, const uint8_t *data) {
     mfm_write_data_byte(crc_hi);
     mfm_write_data_byte(crc_lo);
 
-    /* Gap3: 54 × 0x4E (HD standard) */
+    /* Gap3: 54 x 0x4E (HD standard) */
     for (uint8_t i = 0; i < 54; i++) {
         mfm_write_data_byte(0x4E);
     }

@@ -13,8 +13,14 @@
 
 #define SRAM_SIZE           0x10000UL   /* 65536 bytes */
 
-#define SRAM_MFM_TRACK      0x00000UL   /* MFM raw track buffer */
+#define SRAM_MFM_TRACK      0x00000UL   /* MFM decoded track buffer */
 #define SRAM_MFM_TRACK_SIZE 12496
+
+/* Raw capture buffer: stores uint8_t timer intervals during ISR capture.
+ * Occupies entire SRAM during capture (other buffers not needed then).
+ * ~50000 intervals ≈ 1 revolution at HD 500kbps. */
+#define SRAM_RAW_CAPTURE      0x00000UL
+#define SRAM_RAW_CAPTURE_SIZE 50000UL
 
 #define SRAM_FAT_CACHE      0x030D0UL   /* FAT table cache (9 sectors) */
 #define SRAM_FAT_CACHE_SIZE 4608        /* 9 * 512 */
@@ -163,7 +169,7 @@
  * adds ~28 ticks to each measured interval. Thresholds are shifted
  * accordingly. After R12 is changed to 1kΩ, revert to nominal values.
  */
-#define MFM_PULLUP_DELAY         66     /* Drive internal output delay, R-independent */
+#define MFM_PULLUP_DELAY        109     /* Brute-force optimum from raw tick analysis */
 #define MFM_THRESHOLD_SHORT     (80  + MFM_PULLUP_DELAY)   /* < 108: 2T */
 #define MFM_THRESHOLD_MEDIUM    (112 + MFM_PULLUP_DELAY)   /* < 140: 3T */
 #define MFM_THRESHOLD_LONG      (160 + MFM_PULLUP_DELAY)   /* < 188: 4T */
