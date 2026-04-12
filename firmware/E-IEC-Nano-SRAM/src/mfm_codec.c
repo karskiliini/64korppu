@@ -202,9 +202,8 @@ static uint8_t mfm_extract_byte(uint32_t *sram_pos, uint32_t end_pos,
         /* Extract data bits: every other bit (odd positions = data) */
         while (bits_needed > 0 && *raw_avail >= 2) {
             *raw_avail -= 2;
-            /* Data bit is at raw_avail+1 (the older of the pair),
-             * clock bit is at raw_avail (the newer/transition bit) */
-            uint8_t data_bit = (*raw_bits >> (*raw_avail + 1)) & 0x01;
+            /* After sync alignment: data bit is at even positions (0,2,4...) */
+            uint8_t data_bit = (*raw_bits >> *raw_avail) & 0x01;
             byte_val = (byte_val << 1) | data_bit;
             bits_needed -= 2;
         }
@@ -520,7 +519,7 @@ static int mfm_wait_for_sector(uint8_t target_sector) {
                     }
                     while (raw_avail >= 2 && mark_bits < 16) {
                         raw_avail -= 2;
-                        mark = (mark << 1) | ((raw_bits >> (raw_avail + 1)) & 1);
+                        mark = (mark << 1) | ((raw_bits >> raw_avail) & 1);
                         mark_bits += 2;
                     }
                 }
@@ -540,7 +539,7 @@ static int mfm_wait_for_sector(uint8_t target_sector) {
                             }
                             while (raw_avail >= 2 && bits < 16) {
                                 raw_avail -= 2;
-                                byte_val = (byte_val << 1) | ((raw_bits >> (raw_avail + 1)) & 1);
+                                byte_val = (byte_val << 1) | ((raw_bits >> raw_avail) & 1);
                                 bits += 2;
                             }
                         }
