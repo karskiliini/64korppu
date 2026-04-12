@@ -129,6 +129,30 @@ int mfm_capture_track(void) {
         TRACE("[MFM] capture TIMEOUT!\r\n");
         return FLOPPY_ERR_TIMEOUT;
     }
+
+    /* Pulse code histogram: count 2T/3T/4T/invalid distribution */
+    {
+        uint16_t hist[4] = {0, 0, 0, 0};
+        sram_begin_seq_read(SRAM_MFM_TRACK);
+        uint16_t scan = (capture_count > 500) ? 500 : (uint16_t)capture_count;
+        for (uint16_t i = 0; i < scan; i++) {
+            uint8_t packed = sram_seq_read_byte();
+            for (int p = 3; p >= 0; p--) {
+                hist[(packed >> (p * 2)) & 0x03]++;
+            }
+        }
+        sram_end_seq();
+        TRACE("[MFM] hist 2T=");
+        uart_putdec(hist[0]);
+        TRACE(" 3T=");
+        uart_putdec(hist[1]);
+        TRACE(" 4T=");
+        uart_putdec(hist[2]);
+        TRACE(" inv=");
+        uart_putdec(hist[3]);
+        TRACE("\r\n");
+    }
+
     return FLOPPY_OK;
 }
 
