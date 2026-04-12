@@ -226,8 +226,8 @@
         ┌──────────────┐                 │                  │
         │ D7  /WDATA ──┼─────────────────┤  pin 22          │
         │              │                 │  (MFM write data)│
-        │ D8  /RDATA ──┼─────────────────┤  pin 30          │
-        │  (ICP1)      │   ┌─ 150Ω──5V  │  (MFM read data) │
+        │ D8  /RDATA ──┼──── 74LS14 ─────┤  pin 30          │
+        │  (ICP1)      │   (Schmitt)     │  (MFM read data) │
         │              │   │             │                  │
         │ A0  /TRK00 ──┼───┤─────────────┤  pin 26          │
         │              │   ┌─ 10kΩ──5V   │                  │
@@ -238,9 +238,10 @@
         │ GND ─────────┼─────────────────┤  pins 1,3,...,33 │
         └──────────────┘                 └──────────────────┘
 
-  HUOM: /WDATA (D7) ja /RDATA (D8) tarvitsevat suoran GPIO-kytkennän
-  koska MFM-koodaus/-dekoodaus vaatii mikrosekuntitason ajoitusta.
-  Shift register olisi liian hidas näille signaaleille.
+  HUOM: /WDATA (D7) tarvitsee suoran GPIO-kytkennän (MFM-kirjoitus).
+  /RDATA (D8) kulkee 74LS14 Schmitt-triggerin läpi joka terävöittää
+  hitaat reunat ja poistaa muuttuvan viiveen MFM-lukusignaalista.
+  Katso "74LS14 Schmitt-trigger puskuri" -osio.
 ```
 
 ## Arduino Nano — Pinout (Vaihtoehto E)
@@ -369,6 +370,77 @@
               Nano GND   SRAM GND    595 GND    Floppy GND    3x 100nF
 ```
 
+## 74LS14 Schmitt-trigger puskuri (/RDATA-signaalin terävöitys)
+
+```
+  Floppy-aseman /RDATA-signaali nousee hitaasti aseman sisäisen
+  elektroniikan takia. Tämä aiheuttaa muuttuvan viiveen ICP-
+  reunatunnistuksessa → MFM-pulssit luokitellaan väärin.
+
+  74LS14 (tai 74HC14) on Schmitt-trigger invertterin joka:
+  - Terävöittää hitaat reunat → vakio ~15ns propagaatioviive
+  - Poistaa muuttuvan viiveen → puhtaat 2T/3T/4T-klusterit
+  - Hystereesi (1.7V/0.9V) estää kohinatriggeröinnin
+
+  Huom: 74LS14/74HC14 on INVERTOIVA. Käytetään yhtä porttia
+  ja vaihdetaan ICP1 edge-tunnistus nousevaksi reunaksi softassa:
+    TCCR1B |= (1 << ICES1);  /* Rising edge (inverted) */
+
+  Tai kaksoiinversio kahdella portilla (ei softamuutosta).
+
+  Vaihtoehto A: yksi inversio + softamuutos (suositeltu)
+  ──────────────────���───────────────────────────────────
+
+                    +5V
+                     │
+                    100nF
+                     │
+                    GND
+
+                 74LS14
+                ┌────┬──���─┐
+  /RDATA ───────┤1 1A  VCC├───── +5V
+                │        14│
+  Arduino D8 ←──┤2 1Y  GND├───── GND
+                │         7│
+                │  (muut portit: input → GND)
+                └──────────┘
+
+  Floppy /RDATA (pin 30)
+       │
+       ├─── 150Ω ── +5V  (pull-up, edelleen tarpeen)
+       │
+       └─── 74LS14 pin 1 (1A, input)
+                    pin 2 (1Y, output) ──→ Arduino D8 (ICP1)
+
+  Softamuutos mfm_init():
+    TCCR1B |= (1 << ICES1);   /* Rising edge (74LS14 invertoi) */
+
+
+  Vaihtoehto B: kaksoiinversio, ei softamuutosta
+  ──────────────────────────────────────────────
+
+  /RDATA ──→ 74LS14 pin 1 (1A)
+              pin 2 (1Y) ─���→ pin 3 (2A)
+              pin 4 (2Y) ──→ Arduino D8
+
+  Tulos: signaali kulkee kahden invertterin läpi → alkuperäinen
+  polariteetti säilyy. ICP pysyy falling edge -tilassa.
+  Viive: ~30ns (2 × 15ns).
+
+
+  Yhteensopivat piirit:
+    74LS14   — TTL Schmitt-trigger, 5V, DIP-14
+    74HC14   — CMOS Schmitt-trigger, 5V, DIP-14 (pienempi virrankulutus)
+    74HCT14  — CMOS + TTL-yhteensopivat kynnykset, 5V, DIP-14
+    SN74LS14 — Texas Instruments versio 74LS14:stä
+
+  Kaikki ovat pin-yhteensopivia. 74HC14 suositeltu uusiin piireihin
+  (pienempi virta), 74LS14 toimii yhtä hyvin.
+
+  Käyttämättömät portit: kytke inputit (3A, 4A, 5A, 6A) → GND.
+```
+
 ## Bypass-kondensaattorit
 
 ```
@@ -384,6 +456,9 @@
     +5V ──┤├── GND   (74HC595, pin 16 ja pin 8 väliin)
           100nF
 
+    +5V ──┤├── GND   (74LS14, pin 14 ja pin 7 väliin)
+          100nF
+
   Lisäksi bulk-kondensaattori virtalähteen liittimeen:
     +5V ──┤├── GND   (10µF elektrolyyttinen)
 ```
@@ -396,12 +471,13 @@
    1   Arduino Nano (klooni)  DIP-moduuli    1   ATmega328P, 16MHz, 5V
    2   23LC512               DIP-8          1   64KB SPI SRAM, 5V
    3   74HC595                DIP-16         1   8-bit shift register
+  3b  74LS14 tai 74HC14      DIP-14         1   Schmitt-trigger /RDATA puskuri
    4   Vastus 100Ω            1/4W           4   IEC-suojavastukset
    5   Vastus 4.7kΩ           1/4W           3   IEC pull-up (valinnainen)
    6   Vastus 10kΩ            1/4W           5   Floppy pull-up: /TRK00, /WPT, /DSKCHG (3) + RCLK pull-down (1) + /OE pull-up (1)
   6b  Vastus 150Ω            1/4W           1   /RDATA pull-up (PC-standardi, nopea MFM-signaali)
    7   Vastus 330Ω            1/4W           1   LED-vastus
-   8   Kond. 100nF            keraami.       3   Bypass (Nano, SRAM, 595)
+   8   Kond. 100nF            keraami.       4   Bypass (Nano, SRAM, 595, 74LS14)
    9   Kond. 10µF             elektrol.      1   Bulk virta
   10   LED vihreä             3mm            1   Tilaindikaattori
   11   6-pin DIN liitin       DIN-6          1   IEC-väylä
