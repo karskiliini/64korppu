@@ -227,7 +227,7 @@
         │ D7  /WDATA ──┼─────────────────┤  pin 22          │
         │              │                 │  (MFM write data)│
         │ D8  /RDATA ──┼─────────────────┤  pin 30          │
-        │  (ICP1)      │   ┌─ 10kΩ──5V  │  (MFM read data) │
+        │  (ICP1)      │   ┌─ 150Ω──5V  │  (MFM read data) │
         │              │   │             │                  │
         │ A0  /TRK00 ──┼───┤─────────────┤  pin 26          │
         │              │   ┌─ 10kΩ──5V   │                  │
@@ -398,7 +398,8 @@
    3   74HC595                DIP-16         1   8-bit shift register
    4   Vastus 100Ω            1/4W           4   IEC-suojavastukset
    5   Vastus 4.7kΩ           1/4W           3   IEC pull-up (valinnainen)
-   6   Vastus 10kΩ            1/4W           6   Floppy pull-up (4) + RCLK pull-down (1) + /OE pull-up (1)
+   6   Vastus 10kΩ            1/4W           5   Floppy pull-up: /TRK00, /WPT, /DSKCHG (3) + RCLK pull-down (1) + /OE pull-up (1)
+  6b  Vastus 150Ω            1/4W           1   /RDATA pull-up (PC-standardi, nopea MFM-signaali)
    7   Vastus 330Ω            1/4W           1   LED-vastus
    8   Kond. 100nF            keraami.       3   Bypass (Nano, SRAM, 595)
    9   Kond. 10µF             elektrol.      1   Bulk virta
