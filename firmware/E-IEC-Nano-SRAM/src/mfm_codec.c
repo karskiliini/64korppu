@@ -303,23 +303,36 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
             }
 
             if (state == DEC_SCAN_SYNC) {
-                /* Check raw MFM pattern for sync A1 */
-                if ((raw_bits & 0xFFFF) == MFM_RAW_SYNC) {
-                    sync_count++;
-                    if (pulse_num < 50000) {
-                        TRACE("[MFM] SYNC! count=");
-                        uart_putdec(sync_count);
-                        TRACE(" @");
-                        uart_putdec((uint16_t)pulse_num);
-                        TRACE("\r\n");
-                    }
-                    if (sync_count >= 3) {
-                        /* Start extracting mark byte.
-                         * Reset extraction — sync consumed all alignment bits */
-                        state = DEC_READ_MARK;
-                        byte_val = 0;
-                        byte_bits = 0;
-                        raw_avail = 0;  /* Bits before this point are sync */
+                /*
+                 * Brute-force IDAM search: try all 8 even-bit alignments
+                 * in raw_bits. Extract 8 data bits (every other bit) at
+                 * each alignment. If we get 0xFE → found IDAM.
+                 *
+                 * Need 16 MFM bits (8 data bits) → check raw_avail >= 16.
+                 */
+                if (raw_avail >= 18) {
+                    for (uint8_t off = 0; off <= 14; off += 2) {
+                        uint8_t test = 0;
+                        for (uint8_t b = 0; b < 8; b++) {
+                            uint8_t pos = off + b * 2;
+                            test = (test << 1) | ((raw_bits >> pos) & 1);
+                        }
+                        if (test == MFM_IDAM) {
+                            if (pulse_num < 50000) {
+                                TRACE("[MFM] IDAM found @");
+                                uart_putdec((uint16_t)pulse_num);
+                                TRACE(" off=");
+                                uart_putdec(off);
+                                TRACE("\r\n");
+                            }
+                            /* Lock to this alignment */
+                            state = DEC_READ_ID;
+                            field_pos = 0;
+                            byte_val = 0;
+                            byte_bits = 0;
+                            raw_avail = off;  /* Remaining bits at this alignment */
+                            break;
+                        }
                     }
                 }
             } else {
