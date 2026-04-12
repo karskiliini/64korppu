@@ -65,9 +65,19 @@ void mfm_init(void) {
 
 /* ---- Capture (ISR-driven, track → SRAM) ---- */
 
+/* Raw interval capture for first N pulses (debug) */
+#define RAW_INTERVAL_COUNT 200
+static volatile uint16_t raw_intervals[RAW_INTERVAL_COUNT];
+static volatile uint16_t raw_interval_idx;
+
 ISR(TIMER1_CAPT_vect) {
     uint16_t interval = ICR1 - prev_capture;
     prev_capture = ICR1;
+
+    /* Store raw interval for debug */
+    if (raw_interval_idx < RAW_INTERVAL_COUNT) {
+        raw_intervals[raw_interval_idx++] = interval;
+    }
 
     uint8_t code;
     if (interval < MFM_THRESHOLD_SHORT) {
@@ -103,6 +113,7 @@ int mfm_capture_track(void) {
     pulse_pack = 0;
     pulse_in_pack = 0;
     capture_done = false;
+    raw_interval_idx = 0;
 
     sram_begin_seq_write(SRAM_MFM_TRACK);
     TIFR1 |= (1 << ICF1);
@@ -152,6 +163,17 @@ int mfm_capture_track(void) {
         uart_putdec(hist[3]);
         TRACE("\r\n");
     }
+
+    /* Dump raw timer intervals (first 200 pulses) */
+    TRACE("[MFM] raw ticks (first ");
+    uart_putdec(raw_interval_idx);
+    TRACE("):\r\n");
+    for (uint16_t i = 0; i < raw_interval_idx; i++) {
+        uart_putdec(raw_intervals[i]);
+        uart_putchar(' ');
+        if ((i % 16) == 15) TRACE("\r\n");
+    }
+    TRACE("\r\n");
 
     return FLOPPY_OK;
 }
