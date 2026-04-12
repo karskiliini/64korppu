@@ -164,14 +164,14 @@ int mfm_capture_track(void) {
         TRACE("\r\n");
     }
 
-    /* Dump raw timer intervals (first 200 pulses) */
+    /* Dump raw timer intervals (first 200 pulses) as hex */
     TRACE("[MFM] raw ticks (first ");
     uart_putdec(raw_interval_idx);
     TRACE("):\r\n");
     for (uint16_t i = 0; i < raw_interval_idx; i++) {
-        uart_putdec(raw_intervals[i]);
+        uart_puthex16(raw_intervals[i]);
         uart_putchar(' ');
-        if ((i % 16) == 15) TRACE("\r\n");
+        if ((i % 12) == 11) TRACE("\r\n");
     }
     TRACE("\r\n");
 
