@@ -159,16 +159,10 @@ int mfm_capture_track(void) {
 /* ---- Decode (SRAM → sector data) ---- */
 
 /*
- * MFM raw sync patterns:
- * Sync A1 (missing clock):  0100_0100_1000_1001 = 0x4489
- * Normal A1 (all clocks):   0100_0100_1010_1001 = 0x44A9
- *
- * Standard PC format uses 0x4489, but some drives' read electronics
- * reconstruct the missing clock, outputting 0x44A9 on /RDATA.
- * Accept both patterns for maximum compatibility.
+ * MFM raw sync pattern: 0x4489 (A1 with missing clock).
+ * Only 0x4489 is reliable — 0x44A9 (normal A1) causes false matches.
  */
-#define MFM_RAW_SYNC      0x4489
-#define MFM_RAW_SYNC_ALT  0x44A9
+#define MFM_RAW_SYNC  0x4489
 
 /*
  * Decode state machine.
@@ -196,11 +190,14 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
 
     decode_state_t state = DEC_SCAN_SYNC;
     uint8_t byte_val = 0;
-    uint8_t byte_bits = 0;   /* MFM bits consumed for current byte (0..16) */
+    uint8_t byte_bits = 0;
     uint8_t field_bytes[4];
     uint8_t field_pos = 0;
     uint16_t data_pos = 0;
     uint32_t pulse_num = 0;
+    uint8_t preamble_count = 0;  /* Consecutive 0x5555 detections */
+    int8_t sync_dump = -1;       /* >0: dump this many more values after preamble */
+    uint8_t sync_dumps_done = 0; /* Limit to first 3 preambles */
 
     sram_begin_seq_read(SRAM_MFM_TRACK);
 
@@ -222,18 +219,36 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
             if (raw_avail > 30) raw_avail = 30;
             pulse_num++;
 
-            /* Debug: first 200 pulses */
-            if (pulse_num <= 200) {
-                uart_puthex16((uint16_t)(raw_bits & 0xFFFF));
-                uart_putchar(' ');
-                if ((pulse_num % 8) == 0) TRACE("\r\n");
-            } else if (pulse_num == 201) {
-                TRACE("\r\n[MFM] ...scanning...\r\n");
+            /* Debug: detect 0x00 preamble (0x5555) and dump sync area */
+            {
+                uint16_t bottom = (uint16_t)(raw_bits & 0xFFFF);
+
+                if (bottom == 0x5555) {
+                    preamble_count++;
+                    if (preamble_count >= 4 && sync_dump < 0 && sync_dumps_done < 3) {
+                        TRACE("\r\n[MFM] preamble @");
+                        uart_putdec((uint16_t)pulse_num);
+                        TRACE(": ");
+                        sync_dump = 30;  /* Dump next 30 values */
+                    }
+                } else {
+                    preamble_count = 0;
+                }
+
+                if (sync_dump > 0) {
+                    uart_puthex16(bottom);
+                    uart_putchar(' ');
+                    sync_dump--;
+                    if (sync_dump == 0) {
+                        TRACE("\r\n");
+                        sync_dumps_done++;
+                    }
+                }
             }
 
             if (state == DEC_SCAN_SYNC) {
                 /* Check raw MFM pattern for sync A1 */
-                if (((raw_bits & 0xFFFF) == MFM_RAW_SYNC || (raw_bits & 0xFFFF) == MFM_RAW_SYNC_ALT)) {
+                if ((raw_bits & 0xFFFF) == MFM_RAW_SYNC) {
                     sync_count++;
                     if (pulse_num < 50000) {
                         TRACE("[MFM] SYNC! count=");
@@ -453,7 +468,7 @@ static int mfm_wait_for_sector(uint8_t target_sector) {
         }
         if (raw_avail > 30) raw_avail = 30;
 
-        if (((raw_bits & 0xFFFF) == MFM_RAW_SYNC || (raw_bits & 0xFFFF) == MFM_RAW_SYNC_ALT)) {
+        if ((raw_bits & 0xFFFF) == MFM_RAW_SYNC) {
             sync_count++;
             if (sync_count >= 3) {
                 /* Read address mark + 4 ID bytes via polling */
