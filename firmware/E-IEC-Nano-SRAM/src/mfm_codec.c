@@ -69,6 +69,7 @@ void mfm_init(void) {
 #define RAW_INTERVAL_COUNT 200
 static volatile uint16_t raw_intervals[RAW_INTERVAL_COUNT];
 static volatile uint16_t raw_interval_idx;
+static volatile uint8_t prev_code;
 
 ISR(TIMER1_CAPT_vect) {
     uint16_t interval = ICR1 - prev_capture;
@@ -79,16 +80,35 @@ ISR(TIMER1_CAPT_vect) {
         raw_intervals[raw_interval_idx++] = interval;
     }
 
+    /*
+     * Adaptive thresholds: after a short interval (2T/3T), the signal
+     * recovers less → next interval appears longer. Raise thresholds
+     * after short recovery to correctly classify delayed 2T as 2T.
+     *
+     * After 4T+ (long recovery): standard thresholds
+     * After 2T/3T (short recovery): raised thresholds (+24 ticks)
+     */
+    uint16_t thr_short = MFM_THRESHOLD_SHORT;
+    uint16_t thr_medium = MFM_THRESHOLD_MEDIUM;
+    uint16_t thr_long = MFM_THRESHOLD_LONG;
+
+    if (prev_code <= 1) {  /* Previous was 2T or 3T → short recovery */
+        thr_short  += 24;
+        thr_medium += 24;
+        thr_long   += 24;
+    }
+
     uint8_t code;
-    if (interval < MFM_THRESHOLD_SHORT) {
+    if (interval < thr_short) {
         code = 0;  /* 2T */
-    } else if (interval < MFM_THRESHOLD_MEDIUM) {
+    } else if (interval < thr_medium) {
         code = 1;  /* 3T */
-    } else if (interval < MFM_THRESHOLD_LONG) {
+    } else if (interval < thr_long) {
         code = 2;  /* 4T */
     } else {
         code = 3;  /* Invalid/gap */
     }
+    prev_code = code;
 
     pulse_pack = (pulse_pack << 2) | code;
     pulse_in_pack++;
@@ -114,6 +134,7 @@ int mfm_capture_track(void) {
     pulse_in_pack = 0;
     capture_done = false;
     raw_interval_idx = 0;
+    prev_code = 2;  /* Assume long recovery at start */
 
     sram_begin_seq_write(SRAM_MFM_TRACK);
     TIFR1 |= (1 << ICF1);
