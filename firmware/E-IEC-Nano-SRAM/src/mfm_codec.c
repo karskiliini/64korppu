@@ -118,107 +118,120 @@ ISR(TIMER1_CAPT_vect) {
  */
 #define CAL_SAMPLE_COUNT  1000
 
-static void mfm_calibrate(void) {
+/*
+ * Analytical calibration: compute delay from histogram peaks,
+ * then determine offset by scoring both candidates.
+ *
+ * The histogram always shows two dominant clusters:
+ *   lower = 2T intervals (nominal 64 ticks + delay)
+ *   upper = 3T intervals (nominal 96 ticks + delay)
+ * Delay = cluster_center - nominal.
+ *
+ * This replaces brute-force which was defeated by coincidental
+ * byte matches at wrong delay values.
+ */
+static void mfm_calibrate(uint16_t *hist10) {
+    /* Step 1: Find two peak bins from histogram (10 bins, 16-tick each, base 48) */
+    uint8_t p1 = 0, p2 = 0;
+    uint16_t c1 = 0, c2 = 0;
+    for (uint8_t b = 0; b < 10; b++) {
+        if (hist10[b] > c1) {
+            p2 = p1; c2 = c1;
+            p1 = b; c1 = hist10[b];
+        } else if (hist10[b] > c2) {
+            p2 = b; c2 = hist10[b];
+        }
+    }
+    /* Ensure p1 (lower bin) < p2 (upper bin) */
+    if (p1 > p2) { uint8_t t = p1; p1 = p2; p2 = t; }
+
+    /* Bin centers: base(48) + bin*16 + 8 */
+    uint8_t center_lo = 56 + p1 * 16;  /* ≈ 2T cluster center */
+    uint8_t center_hi = 56 + p2 * 16;  /* ≈ 3T cluster center */
+
+    /* Delay = average of both estimates:
+     * delay_from_2T = center_lo - 64
+     * delay_from_3T = center_hi - 96 */
+    int16_t d1 = (int16_t)center_lo - 64;
+    int16_t d2 = (int16_t)center_hi - 96;
+    int16_t est = (d1 + d2) / 2;
+    if (est < 0) est = 0;
+    uint8_t ana_delay = (uint8_t)est;
+
+    TRACE("[MFM] cal: peaks at ");
+    uart_putdec(center_lo);
+    TRACE(" and ");
+    uart_putdec(center_hi);
+    TRACE(", analytical delay=");
+    uart_putdec(ana_delay);
+    TRACE("\r\n");
+
+    /* Step 2: Determine offset by scoring both candidates.
+     * Try offset=0 and offset=1 with the analytical delay,
+     * count 0x4E gap fill bytes — the correct offset produces many. */
     uint16_t best_score = 0;
-    uint8_t best_delay = 0;
     uint8_t best_offset = 1;
 
-    /*
-     * Brute-force: try delay 0..150 × offset 0..1.
-     * Range starts at 0 to cover 74LS14 Schmitt-trigger setups
-     * where the delay is much smaller than with raw CMOS input.
-     *
-     * Scoring requires:
-     *  1. At least 2 distinct interval types (2T/3T/4T) — rejects
-     *     false positives where all intervals collapse to one type.
-     *  2. Consecutive recognized bytes get bonus — gap fill (0x4E+0x4E),
-     *     sync sequences (0xA1+0xA1), and sync+IDAM (0xA1+0xFE)
-     *     score higher than scattered matches.
-     */
+    for (uint8_t offset = 0; offset <= 1; offset++) {
+        uint16_t score = 0;
+        uint8_t prev = 0xFF;
 
-    for (uint8_t delay = 0; delay <= 150; delay++) {
-        for (uint8_t offset = 0; offset <= 1; offset++) {
-            uint16_t score = 0;
-            uint16_t cnt_2t = 0, cnt_3t = 0, cnt_4t = 0;
-            uint8_t prev_byte = 0xFF;
+        sram_begin_seq_read(SRAM_RAW_CAPTURE);
 
-            sram_begin_seq_read(SRAM_RAW_CAPTURE);
+        uint32_t raw_bits = 0;
+        uint8_t raw_avail = 0;
+        uint8_t dbyte = 0;
+        uint8_t dbits = 0;
 
-            uint32_t raw_bits = 0;
-            uint8_t raw_avail = 0;
-            uint8_t dbyte = 0;
-            uint8_t dbits = 0;
+        for (uint16_t i = 0; i < CAL_SAMPLE_COUNT; i++) {
+            uint8_t v = sram_seq_read_byte();
+            int16_t adj = (int16_t)v - (int16_t)ana_delay + 16;
+            uint8_t cells;
+            if (adj < 32) cells = 2;
+            else {
+                cells = (uint8_t)(adj / 32);
+                if (cells > 4) continue;
+            }
 
-            for (uint16_t i = 0; i < CAL_SAMPLE_COUNT; i++) {
-                uint8_t interval = sram_seq_read_byte();
+            raw_bits = (raw_bits << cells) | 1;
+            raw_avail += cells;
+            if (raw_avail > 30) raw_avail = 30;
 
-                /* Classify: cells = (interval - delay + 16) / 32 */
-                int16_t adj = (int16_t)interval - (int16_t)delay + 16;
-                uint8_t cells;
-                if (adj < 0) {
-                    cells = 2;
-                } else {
-                    cells = (uint8_t)(adj / 32);
-                    if (cells < 2) cells = 2;
-                    if (cells > 4) continue;
-                }
-
-                if (cells == 2) cnt_2t++;
-                else if (cells == 3) cnt_3t++;
-                else if (cells == 4) cnt_4t++;
-
-                raw_bits = (raw_bits << cells) | 1;
-                raw_avail += cells;
-                if (raw_avail > 30) raw_avail = 30;
-
-                while (raw_avail >= 2) {
-                    raw_avail -= 2;
-                    uint8_t data_bit = (raw_bits >> (raw_avail + offset)) & 1;
-                    dbyte = (dbyte << 1) | data_bit;
-                    dbits++;
-                    if (dbits >= 8) {
-                        /* Score recognized bytes + consecutive bonuses.
-                         * 0x00 not scored alone — too easy to produce
-                         * from wrong parameters (all-2T → all-zero). */
-                        switch (dbyte) {
-                            case 0x4E: score += 10; break;
-                            case 0xA1: score += 20; break;
-                            case 0xFE: score += 15; break;
-                            case 0xFB: score += 15; break;
-                        }
-                        if (dbyte == 0x4E && prev_byte == 0x4E) score += 15;
-                        if (dbyte == 0xA1 && prev_byte == 0xA1) score += 25;
-                        if (dbyte == 0xFE && prev_byte == 0xA1) score += 30;
-                        if (dbyte == 0xA1 && prev_byte == 0x00) score += 10;
-
-                        prev_byte = dbyte;
-                        dbyte = 0;
-                        dbits = 0;
+            while (raw_avail >= 2) {
+                raw_avail -= 2;
+                uint8_t data_bit = (raw_bits >> (raw_avail + offset)) & 1;
+                dbyte = (dbyte << 1) | data_bit;
+                dbits++;
+                if (dbits >= 8) {
+                    if (dbyte == 0x4E) {
+                        score += 10;
+                        if (prev == 0x4E) score += 15;
                     }
+                    prev = dbyte;
+                    dbyte = 0;
+                    dbits = 0;
                 }
             }
+        }
+        sram_end_seq();
 
-            sram_end_seq();
+        TRACE("[MFM]   off=");
+        uart_putdec(offset);
+        TRACE(" 4E_score=");
+        uart_putdec(score);
+        TRACE("\r\n");
 
-            /* Require at least 2 interval types, each with ≥5% of
-             * samples. A handful of outliers shouldn't count. */
-            uint16_t min_cnt = CAL_SAMPLE_COUNT / 20;  /* 5% = 50 */
-            uint8_t types = (cnt_2t >= min_cnt) + (cnt_3t >= min_cnt) + (cnt_4t >= min_cnt);
-            if (types < 2) score = 0;
-
-            if (score > best_score) {
-                best_score = score;
-                best_delay = delay;
-                best_offset = offset;
-            }
+        if (score > best_score) {
+            best_score = score;
+            best_offset = offset;
         }
     }
 
-    cal_delay = best_delay;
+    cal_delay = ana_delay;
     cal_offset = best_offset;
 
     TRACE("[MFM] cal: delay=");
-    uart_putdec(best_delay);
+    uart_putdec(ana_delay);
     TRACE(" off=");
     uart_putdec(best_offset);
     TRACE(" score=");
@@ -267,8 +280,8 @@ int mfm_capture_track(void) {
     }
 
     /* Raw interval histogram: 16-tick bins from 48..207 (10 bins) + min/max */
+    uint16_t hist10[10] = {0};
     {
-        uint16_t hist[10] = {0};
         uint16_t scan = (capture_count > 500) ? 500 : (uint16_t)capture_count;
         uint8_t vmin = 255, vmax = 0;
 
@@ -279,7 +292,7 @@ int mfm_capture_track(void) {
             if (v > vmax) vmax = v;
             if (v >= 48 && v < 208) {
                 uint8_t bin = (v - 48) / 16;
-                hist[bin]++;
+                hist10[bin]++;
             }
         }
         sram_end_seq();
@@ -290,52 +303,48 @@ int mfm_capture_track(void) {
         uart_putdec(vmax);
         TRACE("\r\n[MFM] hist:");
         for (uint8_t b = 0; b < 10; b++) {
-            if (hist[b] == 0) continue;
+            if (hist10[b] == 0) continue;
             uart_putchar(' ');
             uart_putdec(48 + (uint16_t)b * 16);
             uart_putchar('-');
             uart_putdec(48 + (uint16_t)(b + 1) * 16 - 1);
             uart_putchar('=');
-            uart_putdec(hist[b]);
+            uart_putdec(hist10[b]);
         }
         TRACE("\r\n");
     }
 
-    /* Dump first 2048 raw tick values for visual inspection */
+    /* Dump first 64 raw tick values for visual inspection */
     {
         sram_begin_seq_read(SRAM_RAW_CAPTURE);
-        uint16_t n = (capture_count > 2048) ? 2048 : (uint16_t)capture_count;
-        TRACE("[MFM] raw (");
-        uart_putdec(n);
-        TRACE(" ticks):\r\n");
-        for (uint16_t i = 0; i < n; i++) {
-            uart_puthex8(sram_seq_read_byte());
+        uint8_t n = (capture_count > 64) ? 64 : (uint8_t)capture_count;
+        TRACE("[MFM] raw:");
+        for (uint8_t i = 0; i < n; i++) {
             uart_putchar(' ');
-            if (((i + 1) % 32) == 0) TRACE("\r\n");
+            uart_puthex8(sram_seq_read_byte());
         }
         sram_end_seq();
         TRACE("\r\n");
     }
 
-    /* Brute-force calibration on first 1000 intervals */
-    mfm_calibrate();
+    /* Analytical calibration from histogram peaks */
+    mfm_calibrate(hist10);
 
-    /* Dump first 200 decoded bytes using calibrated delay+offset.
-     * Covers ~3 sectors — should show 4E gap, 00 preamble, A1 sync, FE IDAM. */
+    /* Dump first 256 decoded bytes — should show 4E gap, 00 preamble, A1 sync, FE IDAM. */
     {
-        uint16_t sample = (capture_count > 10000) ? 10000 : (uint16_t)capture_count;
+        uint16_t sample = (capture_count > 5000) ? 5000 : (uint16_t)capture_count;
         sram_begin_seq_read(SRAM_RAW_CAPTURE);
         uint32_t raw_bits = 0;
         uint8_t avail = 0, dbyte = 0, dbits = 0;
         uint16_t dcount = 0;
 
-        TRACE("[MFM] decoded (first 2048 bytes ~3 sectors, delay=");
+        TRACE("[MFM] decoded (delay=");
         uart_putdec(cal_delay);
         TRACE(" off=");
         uart_putdec(cal_offset);
         TRACE("):\r\n");
 
-        for (uint16_t i = 0; i < sample && dcount < 2048; i++) {
+        for (uint16_t i = 0; i < sample && dcount < 256; i++) {
             uint8_t v = sram_seq_read_byte();
             int16_t adj = (int16_t)v - (int16_t)cal_delay + 16;
             uint8_t cells;
@@ -349,7 +358,7 @@ int mfm_capture_track(void) {
             avail += cells;
             if (avail > 30) avail = 30;
 
-            while (avail >= 2 && dcount < 2048) {
+            while (avail >= 2 && dcount < 256) {
                 avail -= 2;
                 dbyte = (dbyte << 1) | ((raw_bits >> (avail + cal_offset)) & 1);
                 dbits++;
