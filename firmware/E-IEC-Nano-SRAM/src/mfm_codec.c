@@ -293,102 +293,39 @@ int mfm_capture_track(void) {
     /* Analytical calibration from histogram peaks */
     mfm_calibrate(hist10);
 
-    /* Full capture diagnostics: cell counts + 2T run length distribution.
-     * If preamble (96× 2T) exists, max_run should be ~96.
-     * If pulses merge (slow rise), max_run will be much shorter. */
+    /* Threshold sweep: test multiple 2T/3T boundaries in one SRAM pass.
+     * For each threshold, count max consecutive run of intervals below it.
+     * Preamble (96× 2T) should appear as a long run at the correct threshold. */
     {
+        #define SWEEP_N 12
+        /* Thresholds 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 148, 152 */
+        uint16_t sw_run[SWEEP_N] = {0};
+        uint16_t sw_max[SWEEP_N] = {0};
+
         sram_begin_seq_read(SRAM_RAW_CAPTURE);
-        uint16_t cnt_2t = 0, cnt_3t = 0, cnt_4t = 0, cnt_inv = 0;
-        uint16_t run_2t = 0;
-        uint16_t max_run_2t = 0;
-
-        /* 2T run length histogram: bins 1-2, 3-4, 5-8, 9-16, 17-32, 33+ */
-        uint16_t run_hist[6] = {0};
-
-        /* Preamble dump */
-        uint8_t preambles_shown = 0;
-        uint32_t raw_bits = 0;
-        uint8_t in_post_preamble = 0;
-
         for (uint32_t pos = 0; pos < capture_count; pos++) {
             uint8_t v = sram_seq_read_byte();
-            uint8_t cells = mfm_classify(v);
-            if (cells == 0) { cnt_inv++; goto end_run; }
-
-            if (cells == 2) { cnt_2t++; run_2t++; continue; }
-            if (cells == 3) cnt_3t++;
-            else cnt_4t++;
-
-        end_run:
-            if (run_2t > 0) {
-                /* Record completed 2T run */
-                if (run_2t > max_run_2t) max_run_2t = run_2t;
-                if (run_2t <= 2) run_hist[0]++;
-                else if (run_2t <= 4) run_hist[1]++;
-                else if (run_2t <= 8) run_hist[2]++;
-                else if (run_2t <= 16) run_hist[3]++;
-                else if (run_2t <= 32) run_hist[4]++;
-                else run_hist[5]++;
-
-                /* Preamble dump if run >= 16 */
-                if (run_2t >= 16 && preambles_shown < 4) {
-                    TRACE("[MFM] 2T run=");
-                    uart_putdec(run_2t);
-                    TRACE(" @");
-                    uart_putdec((uint16_t)pos);
-                    TRACE(" after:");
-                    in_post_preamble = 1;
-                    raw_bits = 0;
-                }
-                run_2t = 0;
-            }
-
-            /* Dump intervals after long 2T run */
-            if (in_post_preamble > 0 && in_post_preamble <= 16) {
-                uart_putchar(' ');
-                uart_puthex8(v);
-                uart_putchar('(');
-                uart_putchar('0' + cells);
-                uart_putchar(')');
-                raw_bits = (raw_bits << cells) | 1;
-                if ((raw_bits & 0xFFFF) == MFM_RAW_SYNC) {
-                    TRACE(" *SYNC*");
-                }
-                in_post_preamble++;
-                if (in_post_preamble > 16) {
-                    TRACE("\r\n");
-                    preambles_shown++;
-                    in_post_preamble = 0;
+            for (uint8_t t = 0; t < SWEEP_N; t++) {
+                uint8_t thr = 108 + t * 4;
+                if (v < thr) {
+                    sw_run[t]++;
+                } else {
+                    if (sw_run[t] > sw_max[t]) sw_max[t] = sw_run[t];
+                    sw_run[t] = 0;
                 }
             }
         }
-        /* Handle final run */
-        if (run_2t > max_run_2t) max_run_2t = run_2t;
         sram_end_seq();
 
-        TRACE("[MFM] cells: 2T=");
-        uart_putdec(cnt_2t);
-        TRACE(" 3T=");
-        uart_putdec(cnt_3t);
-        TRACE(" 4T=");
-        uart_putdec(cnt_4t);
-        TRACE(" inv=");
-        uart_putdec(cnt_inv);
-        TRACE("\r\n[MFM] max 2T run=");
-        uart_putdec(max_run_2t);
-        TRACE(" dist: 1-2=");
-        uart_putdec(run_hist[0]);
-        TRACE(" 3-4=");
-        uart_putdec(run_hist[1]);
-        TRACE(" 5-8=");
-        uart_putdec(run_hist[2]);
-        TRACE(" 9-16=");
-        uart_putdec(run_hist[3]);
-        TRACE(" 17-32=");
-        uart_putdec(run_hist[4]);
-        TRACE(" 33+=");
-        uart_putdec(run_hist[5]);
-        TRACE("\r\n");
+        TRACE("[MFM] thr sweep (max run <thr):\r\n");
+        for (uint8_t t = 0; t < SWEEP_N; t++) {
+            if (sw_run[t] > sw_max[t]) sw_max[t] = sw_run[t];
+            TRACE("  <");
+            uart_putdec(108 + (uint16_t)t * 4);
+            TRACE(": ");
+            uart_putdec(sw_max[t]);
+            TRACE("\r\n");
+        }
     }
 
     return FLOPPY_OK;
