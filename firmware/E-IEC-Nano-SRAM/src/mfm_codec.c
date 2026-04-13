@@ -22,6 +22,9 @@
  *         pulses on /WDATA (D7) using Timer1 OC1A for bit-cell timing.
  */
 
+/* Raw MFM sync pattern: 0xA1 with missing clock bit */
+#define MFM_RAW_SYNC  0x4489
+
 /* ---- Capture state (used by ISR) ---- */
 
 static volatile uint16_t prev_capture;
@@ -330,48 +333,71 @@ int mfm_capture_track(void) {
     /* Analytical calibration from histogram peaks */
     mfm_calibrate(hist10);
 
-    /* Dump first 256 decoded bytes — should show 4E gap, 00 preamble, A1 sync, FE IDAM. */
+    /* Scan for raw 0x4489 sync patterns and dump first 16 bytes after sync.
+     * This validates the delay and shows the actual sector header. */
     {
-        uint16_t sample = (capture_count > 5000) ? 5000 : (uint16_t)capture_count;
+        uint16_t sample = (capture_count > 20000) ? 20000 : (uint16_t)capture_count;
         sram_begin_seq_read(SRAM_RAW_CAPTURE);
         uint32_t raw_bits = 0;
-        uint8_t avail = 0, dbyte = 0, dbits = 0;
-        uint16_t dcount = 0;
+        uint8_t avail = 0;
+        uint8_t sync_cnt = 0;
+        uint8_t after_sync = 0;
+        uint8_t dbyte = 0, dbits = 0;
+        uint8_t syncs_found = 0;
 
-        TRACE("[MFM] decoded (delay=");
+        TRACE("[MFM] sync scan (delay=");
         uart_putdec(cal_delay);
-        TRACE(" off=");
-        uart_putdec(cal_offset);
         TRACE("):\r\n");
 
-        for (uint16_t i = 0; i < sample && dcount < 256; i++) {
+        for (uint16_t i = 0; i < sample; i++) {
             uint8_t v = sram_seq_read_byte();
             int16_t adj = (int16_t)v - (int16_t)cal_delay + 16;
             uint8_t cells;
             if (adj < 32) cells = 2;
             else {
                 cells = (uint8_t)(adj / 32);
-                if (cells > 4) continue;
+                if (cells > 4) { raw_bits = 0; avail = 0; sync_cnt = 0; after_sync = 0; continue; }
             }
 
             raw_bits = (raw_bits << cells) | 1;
             avail += cells;
             if (avail > 30) avail = 30;
 
-            while (avail >= 2 && dcount < 256) {
-                avail -= 2;
-                dbyte = (dbyte << 1) | ((raw_bits >> (avail + cal_offset)) & 1);
-                dbits++;
-                if (dbits >= 8) {
-                    uart_puthex8(dbyte);
-                    uart_putchar(' ');
-                    dcount++;
-                    if ((dcount % 24) == 0) TRACE("\r\n");
-                    dbyte = 0; dbits = 0;
+            if (after_sync == 0) {
+                if ((raw_bits & 0xFFFF) == MFM_RAW_SYNC) {
+                    sync_cnt++;
+                    if (sync_cnt >= 3) {
+                        after_sync = 1;
+                        dbyte = 0; dbits = 0; avail = 0;
+                        syncs_found++;
+                        TRACE("  SYNC @");
+                        uart_putdec(i);
+                        TRACE(": ");
+                    }
+                }
+            } else {
+                /* After sync: extract bytes at offset=0 */
+                while (avail >= 2 && after_sync <= 16) {
+                    avail -= 2;
+                    dbyte = (dbyte << 1) | ((raw_bits >> avail) & 1);
+                    dbits++;
+                    if (dbits >= 8) {
+                        uart_puthex8(dbyte);
+                        uart_putchar(' ');
+                        after_sync++;
+                        dbyte = 0; dbits = 0;
+                    }
+                }
+                if (after_sync > 16) {
+                    TRACE("\r\n");
+                    after_sync = 0;
+                    sync_cnt = 0;
+                    if (syncs_found >= 4) break;  /* Enough samples */
                 }
             }
         }
         sram_end_seq();
+        if (syncs_found == 0) TRACE("  no sync found!\r\n");
         TRACE("\r\n");
     }
 
@@ -381,26 +407,31 @@ int mfm_capture_track(void) {
 /* ---- Decode (SRAM → sector data) ---- */
 
 /*
- * Decode state machine.
- * Reads raw uint8_t intervals from SRAM, classifies using calibrated
- * delay, builds MFM bitstream, extracts data bytes at calibrated offset,
- * and uses brute-force IDAM search to find sector headers.
+ * Decode state machine using raw 0x4489 sync pattern detection.
+ *
+ * Real floppy controllers use a PLL + sync detector, not byte-level
+ * matching. The 0xA1 sync byte has a MISSING CLOCK that produces
+ * the unique raw MFM pattern 0x4489. This is self-aligning: once
+ * found, the bit framing is known (offset=0 after sync).
+ *
+ * States:
+ *   SCAN_SYNC: look for (raw_bits & 0xFFFF) == 0x4489, count 3
+ *   READ_MARK: extract one byte (IDAM 0xFE or DAM 0xFB)
+ *   READ_ID:   extract 4 sector ID bytes (T, S, R, N)
+ *   READ_DATA: extract 512 data bytes
  */
 typedef enum {
-    DEC_SCAN_SYNC,   /* Looking for IDAM (0xFE) via brute-force alignment */
-    DEC_READ_ID,     /* Extracting 4 sector ID bytes (T, S, R, N) */
-    DEC_READ_DATA,   /* Extracting 512 data bytes after DAM */
+    DEC_SCAN_SYNC,
+    DEC_READ_MARK,
+    DEC_READ_ID,
+    DEC_READ_DATA,
 } decode_state_t;
 
 int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
     TRACE("[MFM] decode sector ");
     uart_putdec(sector);
-    TRACE(", ");
-    uart_putdec((uint16_t)capture_count);
-    TRACE(" intervals, delay=");
+    TRACE(" delay=");
     uart_putdec(cal_delay);
-    TRACE(" off=");
-    uart_putdec(cal_offset);
     TRACE("\r\n");
 
     uint32_t raw_bits = 0;
@@ -408,12 +439,12 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
     bool found_sector = false;
 
     decode_state_t state = DEC_SCAN_SYNC;
+    uint8_t sync_count = 0;
     uint8_t byte_val = 0;
     uint8_t byte_bits = 0;
     uint8_t field_bytes[4];
     uint8_t field_pos = 0;
     uint16_t data_pos = 0;
-    uint8_t offset = cal_offset;
     uint8_t delay = cal_delay;
 
     sram_begin_seq_read(SRAM_RAW_CAPTURE);
@@ -424,18 +455,17 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
         /* Classify interval using calibrated delay */
         int16_t adj = (int16_t)interval - (int16_t)delay + 16;
         uint8_t cells;
-        if (adj < 0) {
-            cells = 2;  /* Clamp minimum */
+        if (adj < 32) {
+            cells = 2;
         } else {
             cells = (uint8_t)(adj / 32);
-            if (cells < 2) cells = 2;
             if (cells > 4) {
-                /* Invalid interval — reset state */
-                raw_bits = 0;
-                raw_avail = 0;
-                if (state == DEC_SCAN_SYNC) continue;
-                state = DEC_SCAN_SYNC;
-                byte_bits = 0;
+                raw_bits = 0; raw_avail = 0;
+                sync_count = 0;
+                if (state != DEC_SCAN_SYNC) {
+                    state = DEC_SCAN_SYNC;
+                    byte_bits = 0;
+                }
                 continue;
             }
         }
@@ -447,50 +477,51 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
 
         if (state == DEC_SCAN_SYNC) {
             /*
-             * Brute-force marker search: extract byte at the calibrated
-             * offset from current raw_bits. Need 16 MFM bits = 8 data bits.
-             *
-             * When found_sector is false: look for IDAM (0xFE).
-             * When found_sector is true:  look for DAM (0xFB).
+             * Look for raw MFM sync pattern 0x4489.
+             * Need 3 consecutive syncs before address mark.
+             * This is self-aligning — no offset needed.
              */
-            if (raw_avail >= 18) {
-                /* Extract byte at calibrated offset */
-                uint8_t test = 0;
-                for (uint8_t b = 0; b < 8; b++) {
-                    uint8_t bitpos = offset + (7 - b) * 2;
-                    test |= (uint8_t)(((raw_bits >> bitpos) & 1) << (7 - b));
-                }
-                if (!found_sector && test == MFM_IDAM) {
-                    /* Found IDAM marker -- switch to reading sector ID */
-                    state = DEC_READ_ID;
-                    field_pos = 0;
-                    byte_val = 0;
-                    byte_bits = 0;
-                    raw_avail = 0;  /* Reset: start fresh for ID bytes */
-                } else if (found_sector && test == MFM_DAM) {
-                    /* Found DAM after matching IDAM -- start reading data */
-                    state = DEC_READ_DATA;
-                    data_pos = 0;
+            if ((raw_bits & 0xFFFF) == MFM_RAW_SYNC) {
+                sync_count++;
+                if (sync_count >= 3) {
+                    /* 3 sync marks found — next byte is address mark.
+                     * Reset bit extraction: offset=0 after sync. */
+                    state = DEC_READ_MARK;
                     byte_val = 0;
                     byte_bits = 0;
                     raw_avail = 0;
                 }
+            } else if (sync_count > 0 && (raw_bits & 0xFFFF) != MFM_RAW_SYNC) {
+                /* Lost sync — only reset if we haven't reached 3 yet */
+                if (sync_count < 3) sync_count = 0;
             }
         } else {
-            /* States DEC_READ_ID / DEC_READ_DATA:
-             * Extract data bits from raw MFM stream at calibrated offset.
-             * Every 2 raw MFM bits = 1 data bit (clock+data pair). */
+            /* States READ_MARK / READ_ID / READ_DATA:
+             * Extract data bits. After sync, offset=0 gives data bits. */
             while (raw_avail >= 2) {
                 raw_avail -= 2;
-                uint8_t data_bit = (raw_bits >> (raw_avail + offset)) & 0x01;
+                uint8_t data_bit = (raw_bits >> raw_avail) & 0x01;
                 byte_val = (byte_val << 1) | data_bit;
                 byte_bits++;
 
                 if (byte_bits >= 8) {
-                    /* Complete byte extracted */
                     byte_bits = 0;
 
-                    if (state == DEC_READ_ID) {
+                    if (state == DEC_READ_MARK) {
+                        /* Address mark byte after sync */
+                        if (!found_sector && byte_val == MFM_IDAM) {
+                            state = DEC_READ_ID;
+                            field_pos = 0;
+                        } else if (found_sector && byte_val == MFM_DAM) {
+                            state = DEC_READ_DATA;
+                            data_pos = 0;
+                        } else {
+                            /* Unexpected mark — back to scanning */
+                            state = DEC_SCAN_SYNC;
+                            sync_count = 0;
+                            break;
+                        }
+                    } else if (state == DEC_READ_ID) {
                         field_bytes[field_pos++] = byte_val;
                         if (field_pos >= 4) {
                             uint8_t t = field_bytes[0];
@@ -498,9 +529,8 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
                             uint8_t r = field_bytes[2];
                             uint8_t n = field_bytes[3];
 
-                            /* Validate: T=0-79, S=0-1, R=1-18, N=2 */
                             if (t < 80 && s <= 1 && r >= 1 && r <= 18 && n == 2) {
-                                TRACE("[MFM] IDAM: T=");
+                                TRACE("[MFM] IDAM T=");
                                 uart_putdec(t);
                                 TRACE(" S=");
                                 uart_putdec(s);
@@ -508,19 +538,17 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
                                 uart_putdec(r);
                                 TRACE("\r\n");
                                 if (r == sector) {
-                                    TRACE("[MFM] SECTOR MATCH!\r\n");
                                     found_sector = true;
-                                    /* Continue scanning for DAM (0xFB) */
                                 }
                             }
-                            /* Back to scanning (for DAM or next IDAM) */
                             state = DEC_SCAN_SYNC;
-                            break;  /* Exit bit extraction, resume scanning */
+                            sync_count = 0;
+                            break;
                         }
                     } else if (state == DEC_READ_DATA) {
                         data_out[data_pos++] = byte_val;
                         if (data_pos >= 512) {
-                            TRACE("[MFM] decode OK, 512 bytes\r\n");
+                            TRACE("[MFM] decode OK\r\n");
                             sram_end_seq();
                             return FLOPPY_OK;
                         }
@@ -638,8 +666,6 @@ static uint8_t mfm_poll_pulse(void) {
  * Returns FLOPPY_OK when positioned right after the 4-byte sector ID.
  * Caller should then wait through CRC+gap2 before writing.
  */
-#define MFM_RAW_SYNC  0x4489
-
 static int mfm_wait_for_sector(uint8_t target_sector) {
     TRACE("[MFM] scan for sector ");
     uart_putdec(target_sector);
