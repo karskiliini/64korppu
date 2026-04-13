@@ -152,12 +152,19 @@ static void mfm_calibrate(uint16_t *hist10) {
     uint8_t center_lo = 56 + p1 * 16;  /* ≈ 2T cluster center */
     uint8_t center_hi = 56 + p2 * 16;  /* ≈ 3T cluster center */
 
-    /* Delay = average of both estimates:
-     * delay_from_2T = center_lo - 64
-     * delay_from_3T = center_hi - 96 */
+    /* Delay = minimum of both estimates, minus margin for 4T.
+     *
+     * Variable delay: after longer intervals, the signal recovers
+     * more → shorter delay. 4T intervals have ~8-12 less delay
+     * than 2T/3T. Using the minimum estimate minus 8 ensures
+     * 4T intervals (needed for sync 0x4489) are classified as 4T.
+     *
+     * At delay=32 (typical): 3T/4T boundary = 144 ticks.
+     * Actual 4T intervals ~148-160 → correctly classified. */
     int16_t d1 = (int16_t)center_lo - 64;
     int16_t d2 = (int16_t)center_hi - 96;
-    int16_t est = (d1 + d2) / 2;
+    int16_t est = (d1 < d2) ? d1 : d2;
+    est -= 8;  /* Margin for variable delay at 4T */
     if (est < 0) est = 0;
     uint8_t ana_delay = (uint8_t)est;
 
