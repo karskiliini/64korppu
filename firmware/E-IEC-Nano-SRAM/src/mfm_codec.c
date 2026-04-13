@@ -139,8 +139,8 @@ static void mfm_calibrate(void) {
     for (uint8_t delay = 0; delay <= 150; delay++) {
         for (uint8_t offset = 0; offset <= 1; offset++) {
             uint16_t score = 0;
-            uint8_t has_2t = 0, has_3t = 0, has_4t = 0;
-            uint8_t prev_byte = 0;
+            uint16_t cnt_2t = 0, cnt_3t = 0, cnt_4t = 0;
+            uint8_t prev_byte = 0xFF;
 
             sram_begin_seq_read(SRAM_RAW_CAPTURE);
 
@@ -163,9 +163,9 @@ static void mfm_calibrate(void) {
                     if (cells > 4) continue;
                 }
 
-                if (cells == 2) has_2t = 1;
-                else if (cells == 3) has_3t = 1;
-                else if (cells == 4) has_4t = 1;
+                if (cells == 2) cnt_2t++;
+                else if (cells == 3) cnt_3t++;
+                else if (cells == 4) cnt_4t++;
 
                 raw_bits = (raw_bits << cells) | 1;
                 raw_avail += cells;
@@ -177,19 +177,19 @@ static void mfm_calibrate(void) {
                     dbyte = (dbyte << 1) | data_bit;
                     dbits++;
                     if (dbits >= 8) {
-                        /* Base score for recognized bytes */
+                        /* Score recognized bytes + consecutive bonuses.
+                         * 0x00 not scored alone — too easy to produce
+                         * from wrong parameters (all-2T → all-zero). */
                         switch (dbyte) {
                             case 0x4E: score += 10; break;
-                            case 0x00: score += 3;  break;
                             case 0xA1: score += 20; break;
                             case 0xFE: score += 15; break;
                             case 0xFB: score += 15; break;
                         }
-                        /* Consecutive pair bonuses */
                         if (dbyte == 0x4E && prev_byte == 0x4E) score += 15;
                         if (dbyte == 0xA1 && prev_byte == 0xA1) score += 25;
                         if (dbyte == 0xFE && prev_byte == 0xA1) score += 30;
-                        if (dbyte == 0x00 && prev_byte == 0x00) score += 5;
+                        if (dbyte == 0xA1 && prev_byte == 0x00) score += 10;
 
                         prev_byte = dbyte;
                         dbyte = 0;
@@ -200,10 +200,10 @@ static void mfm_calibrate(void) {
 
             sram_end_seq();
 
-            /* Require at least 2 different interval types.
-             * Without this, high delay maps everything to 2T → all 0x00,
-             * producing false-positive scores. */
-            uint8_t types = has_2t + has_3t + has_4t;
+            /* Require at least 2 interval types, each with ≥5% of
+             * samples. A handful of outliers shouldn't count. */
+            uint16_t min_cnt = CAL_SAMPLE_COUNT / 20;  /* 5% = 50 */
+            uint8_t types = (cnt_2t >= min_cnt) + (cnt_3t >= min_cnt) + (cnt_4t >= min_cnt);
             if (types < 2) score = 0;
 
             if (score > best_score) {

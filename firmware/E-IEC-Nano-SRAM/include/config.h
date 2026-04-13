@@ -170,10 +170,10 @@
  * Brute-force calibration finds the actual delay at runtime.
  * Default here is just the initial fallback.
  */
-#define MFM_PULLUP_DELAY        20      /* Initial fallback; calibration overrides */
-#define MFM_THRESHOLD_SHORT     (80  + MFM_PULLUP_DELAY)   /* < threshold: 2T */
-#define MFM_THRESHOLD_MEDIUM    (112 + MFM_PULLUP_DELAY)   /* < threshold: 3T */
-#define MFM_THRESHOLD_LONG      (160 + MFM_PULLUP_DELAY)   /* < threshold: 4T */
+#define MFM_PULLUP_DELAY        30      /* Measured: 2T≈107, 3T≈133, 4T≈155 (74LS14) */
+#define MFM_THRESHOLD_SHORT     (80  + MFM_PULLUP_DELAY)   /* < 110: 2T */
+#define MFM_THRESHOLD_MEDIUM    (112 + MFM_PULLUP_DELAY)   /* < 142: 3T */
+#define MFM_THRESHOLD_LONG      (160 + MFM_PULLUP_DELAY)   /* < 190: 4T */
 
 /* MFM address marks */
 #define MFM_SYNC_BYTE   0xA1
