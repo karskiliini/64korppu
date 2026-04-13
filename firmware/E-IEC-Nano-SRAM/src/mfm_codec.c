@@ -117,21 +117,30 @@ ISR(TIMER1_CAPT_vect) {
  * Reads raw intervals from SRAM via sequential read.
  */
 #define CAL_SAMPLE_COUNT  1000
-#define CAL_BYTE_COUNT    64     /* Max bytes to extract per trial */
 
 static void mfm_calibrate(void) {
     uint16_t best_score = 0;
-    uint8_t best_delay = MFM_PULLUP_DELAY;
+    uint8_t best_delay = 0;
     uint8_t best_offset = 1;
 
-    /* Read first CAL_SAMPLE_COUNT intervals into a small
-     * working window. We can't keep all 1000 in RAM on AVR,
-     * so we re-read from SRAM for each delay trial.
-     * This is slow but only done once per track. */
+    /*
+     * Brute-force: try delay 0..150 × offset 0..1.
+     * Range starts at 0 to cover 74LS14 Schmitt-trigger setups
+     * where the delay is much smaller than with raw CMOS input.
+     *
+     * Scoring requires:
+     *  1. At least 2 distinct interval types (2T/3T/4T) — rejects
+     *     false positives where all intervals collapse to one type.
+     *  2. Consecutive recognized bytes get bonus — gap fill (0x4E+0x4E),
+     *     sync sequences (0xA1+0xA1), and sync+IDAM (0xA1+0xFE)
+     *     score higher than scattered matches.
+     */
 
-    for (uint8_t delay = 50; delay <= 120; delay++) {
+    for (uint8_t delay = 0; delay <= 150; delay++) {
         for (uint8_t offset = 0; offset <= 1; offset++) {
             uint16_t score = 0;
+            uint8_t has_2t = 0, has_3t = 0, has_4t = 0;
+            uint8_t prev_byte = 0;
 
             sram_begin_seq_read(SRAM_RAW_CAPTURE);
 
@@ -147,33 +156,42 @@ static void mfm_calibrate(void) {
                 int16_t adj = (int16_t)interval - (int16_t)delay + 16;
                 uint8_t cells;
                 if (adj < 0) {
-                    cells = 2;  /* Clamp minimum */
+                    cells = 2;
                 } else {
                     cells = (uint8_t)(adj / 32);
                     if (cells < 2) cells = 2;
-                    if (cells > 4) continue;  /* Skip invalid */
+                    if (cells > 4) continue;
                 }
 
-                /* Add to MFM bitstream: shift by cells, set LSB */
+                if (cells == 2) has_2t = 1;
+                else if (cells == 3) has_3t = 1;
+                else if (cells == 4) has_4t = 1;
+
                 raw_bits = (raw_bits << cells) | 1;
                 raw_avail += cells;
                 if (raw_avail > 30) raw_avail = 30;
 
-                /* Extract data bits at given offset */
                 while (raw_avail >= 2) {
                     raw_avail -= 2;
                     uint8_t data_bit = (raw_bits >> (raw_avail + offset)) & 1;
                     dbyte = (dbyte << 1) | data_bit;
                     dbits++;
                     if (dbits >= 8) {
-                        /* Score recognized bytes */
+                        /* Base score for recognized bytes */
                         switch (dbyte) {
-                            case 0x4E: score += 10; break;  /* Gap fill */
-                            case 0x00: score += 5;  break;  /* Preamble */
-                            case 0xA1: score += 20; break;  /* Sync mark */
-                            case 0xFE: score += 15; break;  /* IDAM */
-                            case 0xFB: score += 15; break;  /* DAM */
+                            case 0x4E: score += 10; break;
+                            case 0x00: score += 3;  break;
+                            case 0xA1: score += 20; break;
+                            case 0xFE: score += 15; break;
+                            case 0xFB: score += 15; break;
                         }
+                        /* Consecutive pair bonuses */
+                        if (dbyte == 0x4E && prev_byte == 0x4E) score += 15;
+                        if (dbyte == 0xA1 && prev_byte == 0xA1) score += 25;
+                        if (dbyte == 0xFE && prev_byte == 0xA1) score += 30;
+                        if (dbyte == 0x00 && prev_byte == 0x00) score += 5;
+
+                        prev_byte = dbyte;
                         dbyte = 0;
                         dbits = 0;
                     }
@@ -181,6 +199,12 @@ static void mfm_calibrate(void) {
             }
 
             sram_end_seq();
+
+            /* Require at least 2 different interval types.
+             * Without this, high delay maps everything to 2T → all 0x00,
+             * producing false-positive scores. */
+            uint8_t types = has_2t + has_3t + has_4t;
+            if (types < 2) score = 0;
 
             if (score > best_score) {
                 best_score = score;
@@ -193,7 +217,7 @@ static void mfm_calibrate(void) {
     cal_delay = best_delay;
     cal_offset = best_offset;
 
-    TRACE("[MFM] cal: best delay=");
+    TRACE("[MFM] cal: delay=");
     uart_putdec(best_delay);
     TRACE(" off=");
     uart_putdec(best_offset);
@@ -242,28 +266,54 @@ int mfm_capture_track(void) {
         return FLOPPY_ERR_TIMEOUT;
     }
 
-    /* Raw interval histogram: 8 bins covering 0..255 (bin width = 32) */
+    /* Raw interval histogram: 16-tick bins from 48..207 (10 bins) + min/max */
     {
-        uint16_t hist[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+        uint16_t hist[10] = {0};
         uint16_t scan = (capture_count > 500) ? 500 : (uint16_t)capture_count;
+        uint8_t vmin = 255, vmax = 0;
 
         sram_begin_seq_read(SRAM_RAW_CAPTURE);
         for (uint16_t i = 0; i < scan; i++) {
             uint8_t v = sram_seq_read_byte();
-            uint8_t bin = v >> 5;  /* v / 32 */
-            if (bin < 8) hist[bin]++;
+            if (v < vmin) vmin = v;
+            if (v > vmax) vmax = v;
+            if (v >= 48 && v < 208) {
+                uint8_t bin = (v - 48) / 16;
+                hist[bin]++;
+            }
         }
         sram_end_seq();
 
-        TRACE("[MFM] hist:");
-        for (uint8_t b = 0; b < 8; b++) {
+        TRACE("[MFM] range: min=");
+        uart_putdec(vmin);
+        TRACE(" max=");
+        uart_putdec(vmax);
+        TRACE("\r\n[MFM] hist:");
+        for (uint8_t b = 0; b < 10; b++) {
+            if (hist[b] == 0) continue;
             uart_putchar(' ');
-            uart_putdec((uint16_t)b * 32);
+            uart_putdec(48 + (uint16_t)b * 16);
             uart_putchar('-');
-            uart_putdec((uint16_t)(b + 1) * 32 - 1);
+            uart_putdec(48 + (uint16_t)(b + 1) * 16 - 1);
             uart_putchar('=');
             uart_putdec(hist[b]);
         }
+        TRACE("\r\n");
+    }
+
+    /* Dump first 2048 raw tick values for visual inspection */
+    {
+        sram_begin_seq_read(SRAM_RAW_CAPTURE);
+        uint16_t n = (capture_count > 2048) ? 2048 : (uint16_t)capture_count;
+        TRACE("[MFM] raw (");
+        uart_putdec(n);
+        TRACE(" ticks):\r\n");
+        for (uint16_t i = 0; i < n; i++) {
+            uart_puthex8(sram_seq_read_byte());
+            uart_putchar(' ');
+            if (((i + 1) % 32) == 0) TRACE("\r\n");
+        }
+        sram_end_seq();
         TRACE("\r\n");
     }
 

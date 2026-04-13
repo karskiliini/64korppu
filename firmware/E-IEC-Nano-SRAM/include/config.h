@@ -165,14 +165,15 @@
  * Pulse classification thresholds (Timer1 ticks at 16MHz).
  *
  * Nominal HD 500kbps intervals: 2T=64, 3T=96, 4T=128 ticks.
- * Pull-up delay compensation: 10kΩ pull-up + cable capacitance
- * adds ~28 ticks to each measured interval. Thresholds are shifted
- * accordingly. After R12 is changed to 1kΩ, revert to nominal values.
+ * With 74LS14 Schmitt-trigger (1.7V threshold): delay is much
+ * smaller than with raw CMOS input (~10-40 ticks vs ~109 ticks).
+ * Brute-force calibration finds the actual delay at runtime.
+ * Default here is just the initial fallback.
  */
-#define MFM_PULLUP_DELAY        109     /* Brute-force optimum from raw tick analysis */
-#define MFM_THRESHOLD_SHORT     (80  + MFM_PULLUP_DELAY)   /* < 108: 2T */
-#define MFM_THRESHOLD_MEDIUM    (112 + MFM_PULLUP_DELAY)   /* < 140: 3T */
-#define MFM_THRESHOLD_LONG      (160 + MFM_PULLUP_DELAY)   /* < 188: 4T */
+#define MFM_PULLUP_DELAY        20      /* Initial fallback; calibration overrides */
+#define MFM_THRESHOLD_SHORT     (80  + MFM_PULLUP_DELAY)   /* < threshold: 2T */
+#define MFM_THRESHOLD_MEDIUM    (112 + MFM_PULLUP_DELAY)   /* < threshold: 3T */
+#define MFM_THRESHOLD_LONG      (160 + MFM_PULLUP_DELAY)   /* < threshold: 4T */
 
 /* MFM address marks */
 #define MFM_SYNC_BYTE   0xA1
