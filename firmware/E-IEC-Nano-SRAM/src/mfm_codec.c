@@ -33,8 +33,18 @@ static volatile bool capture_done;
 
 /* ---- Calibration results (set after capture, used by decoder) ---- */
 
-static uint8_t cal_delay;      /* Best delay value from brute-force calibration */
-static uint8_t cal_offset;     /* Best bit offset (0 or 1) */
+static uint8_t cal_delay;      /* Display-only delay estimate */
+static uint8_t cal_thr_23;    /* Threshold: interval < thr_23 → 2T, else 3T */
+static uint8_t cal_thr_34;    /* Threshold: interval < thr_34 → 3T, else 4T */
+
+/* Classify interval using calibrated thresholds.
+ * Returns 2, 3, 4 (valid) or 0 (invalid). */
+static inline uint8_t mfm_classify(uint8_t interval) {
+    if (interval < cal_thr_23) return 2;
+    if (interval < cal_thr_34) return 3;
+    if (interval < cal_thr_34 + 32) return 4;
+    return 0;
+}
 
 /* ---- Write state ---- */
 
@@ -83,7 +93,8 @@ void mfm_init(void) {
 
     /* Default calibration values (overwritten after first capture) */
     cal_delay  = MFM_PULLUP_DELAY;
-    cal_offset = 1;
+    cal_thr_23 = 120;  /* Default 2T/3T threshold */
+    cal_thr_34 = 144;  /* Default 3T/4T threshold */
 }
 
 /* ---- Capture ISR: store raw uint8_t intervals to SRAM ---- */
@@ -152,101 +163,43 @@ static void mfm_calibrate(uint16_t *hist10) {
     uint8_t center_lo = 56 + p1 * 16;  /* ≈ 2T cluster center */
     uint8_t center_hi = 56 + p2 * 16;  /* ≈ 3T cluster center */
 
-    /* Delay = minimum of both estimates, minus margin for 4T.
+    /* Compute explicit thresholds from cluster peaks.
      *
-     * Variable delay: after longer intervals, the signal recovers
-     * more → shorter delay. 4T intervals have ~8-12 less delay
-     * than 2T/3T. Using the minimum estimate minus 8 ensures
-     * 4T intervals (needed for sync 0x4489) are classified as 4T.
+     * Variable delay makes a single "delay" value impossible:
+     *   - Preamble 2T (after 2T): higher delay → ~112 ticks
+     *   - Gap fill 2T (after 3T): lower delay → ~106 ticks
+     *   - Sync 4T (after 3T):     lowest delay → ~148 ticks
      *
-     * At delay=32 (typical): 3T/4T boundary = 144 ticks.
-     * Actual 4T intervals ~148-160 → correctly classified. */
+     * Threshold approach: place boundaries at cluster midpoints.
+     *   thr_23 = midpoint of 2T and 3T clusters
+     *   thr_34 = 3T center + half cluster spacing (biased low for 4T)
+     */
+    uint8_t thr_23 = (center_lo + center_hi) / 2;       /* ~120 */
+    uint8_t thr_34 = center_hi + (center_hi - center_lo) / 2;  /* ~152 */
+    /* Bias thr_34 down by 8 to catch 4T intervals with less delay */
+    if (thr_34 > 8) thr_34 -= 8;  /* ~144 */
+
+    /* Store as delay for backward compat with decode formula,
+     * but the thresholds are what matter. */
     int16_t d1 = (int16_t)center_lo - 64;
     int16_t d2 = (int16_t)center_hi - 96;
-    int16_t est = (d1 < d2) ? d1 : d2;
-    est -= 8;  /* Margin for variable delay at 4T */
-    if (est < 0) est = 0;
-    uint8_t ana_delay = (uint8_t)est;
+    uint8_t ana_delay = (uint8_t)((d1 + d2) / 2);  /* ~40, for display only */
 
-    TRACE("[MFM] cal: peaks at ");
+    TRACE("[MFM] cal: peaks ");
     uart_putdec(center_lo);
-    TRACE(" and ");
+    uart_putchar('/');
     uart_putdec(center_hi);
-    TRACE(", analytical delay=");
-    uart_putdec(ana_delay);
+    TRACE(" thr=");
+    uart_putdec(thr_23);
+    uart_putchar('/');
+    uart_putdec(thr_34);
     TRACE("\r\n");
 
-    /* Step 2: Determine offset by scoring both candidates.
-     * Try offset=0 and offset=1 with the analytical delay,
-     * count 0x4E gap fill bytes — the correct offset produces many. */
-    uint16_t best_score = 0;
-    uint8_t best_offset = 1;
-
-    for (uint8_t offset = 0; offset <= 1; offset++) {
-        uint16_t score = 0;
-        uint8_t prev = 0xFF;
-
-        sram_begin_seq_read(SRAM_RAW_CAPTURE);
-
-        uint32_t raw_bits = 0;
-        uint8_t raw_avail = 0;
-        uint8_t dbyte = 0;
-        uint8_t dbits = 0;
-
-        for (uint16_t i = 0; i < CAL_SAMPLE_COUNT; i++) {
-            uint8_t v = sram_seq_read_byte();
-            int16_t adj = (int16_t)v - (int16_t)ana_delay + 16;
-            uint8_t cells;
-            if (adj < 32) cells = 2;
-            else {
-                cells = (uint8_t)(adj / 32);
-                if (cells > 4) continue;
-            }
-
-            raw_bits = (raw_bits << cells) | 1;
-            raw_avail += cells;
-            if (raw_avail > 30) raw_avail = 30;
-
-            while (raw_avail >= 2) {
-                raw_avail -= 2;
-                uint8_t data_bit = (raw_bits >> (raw_avail + offset)) & 1;
-                dbyte = (dbyte << 1) | data_bit;
-                dbits++;
-                if (dbits >= 8) {
-                    if (dbyte == 0x4E) {
-                        score += 10;
-                        if (prev == 0x4E) score += 15;
-                    }
-                    prev = dbyte;
-                    dbyte = 0;
-                    dbits = 0;
-                }
-            }
-        }
-        sram_end_seq();
-
-        TRACE("[MFM]   off=");
-        uart_putdec(offset);
-        TRACE(" 4E_score=");
-        uart_putdec(score);
-        TRACE("\r\n");
-
-        if (score > best_score) {
-            best_score = score;
-            best_offset = offset;
-        }
-    }
-
+    /* Offset is determined by sync-based decoder (0x4489 is self-aligning),
+     * no need for offset scoring. */
     cal_delay = ana_delay;
-    cal_offset = best_offset;
-
-    TRACE("[MFM] cal: delay=");
-    uart_putdec(ana_delay);
-    TRACE(" off=");
-    uart_putdec(best_offset);
-    TRACE(" score=");
-    uart_putdec(best_score);
-    TRACE("\r\n");
+    cal_thr_23 = thr_23;
+    cal_thr_34 = thr_34;
 }
 
 /* ---- Capture track ---- */
@@ -345,7 +298,6 @@ int mfm_capture_track(void) {
      * If pulses merge (slow rise), max_run will be much shorter. */
     {
         sram_begin_seq_read(SRAM_RAW_CAPTURE);
-        uint8_t delay = cal_delay;
         uint16_t cnt_2t = 0, cnt_3t = 0, cnt_4t = 0, cnt_inv = 0;
         uint16_t run_2t = 0;
         uint16_t max_run_2t = 0;
@@ -360,13 +312,8 @@ int mfm_capture_track(void) {
 
         for (uint32_t pos = 0; pos < capture_count; pos++) {
             uint8_t v = sram_seq_read_byte();
-            int16_t adj = (int16_t)v - (int16_t)delay + 16;
-            uint8_t cells;
-            if (adj < 32) cells = 2;
-            else {
-                cells = (uint8_t)(adj / 32);
-                if (cells > 4) { cnt_inv++; goto end_run; }
-            }
+            uint8_t cells = mfm_classify(v);
+            if (cells == 0) { cnt_inv++; goto end_run; }
 
             if (cells == 2) { cnt_2t++; run_2t++; continue; }
             if (cells == 3) cnt_3t++;
@@ -471,10 +418,12 @@ typedef enum {
 } decode_state_t;
 
 int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
-    TRACE("[MFM] decode sector ");
+    TRACE("[MFM] decode R=");
     uart_putdec(sector);
-    TRACE(" delay=");
-    uart_putdec(cal_delay);
+    TRACE(" thr=");
+    uart_putdec(cal_thr_23);
+    uart_putchar('/');
+    uart_putdec(cal_thr_34);
     TRACE("\r\n");
 
     uint32_t raw_bits = 0;
@@ -488,29 +437,21 @@ int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
     uint8_t field_bytes[4];
     uint8_t field_pos = 0;
     uint16_t data_pos = 0;
-    uint8_t delay = cal_delay;
-
     sram_begin_seq_read(SRAM_RAW_CAPTURE);
 
     for (uint32_t pos = 0; pos < capture_count; pos++) {
         uint8_t interval = sram_seq_read_byte();
 
-        /* Classify interval using calibrated delay */
-        int16_t adj = (int16_t)interval - (int16_t)delay + 16;
-        uint8_t cells;
-        if (adj < 32) {
-            cells = 2;
-        } else {
-            cells = (uint8_t)(adj / 32);
-            if (cells > 4) {
-                raw_bits = 0; raw_avail = 0;
-                sync_count = 0;
-                if (state != DEC_SCAN_SYNC) {
-                    state = DEC_SCAN_SYNC;
-                    byte_bits = 0;
-                }
-                continue;
+        /* Classify interval using calibrated thresholds */
+        uint8_t cells = mfm_classify(interval);
+        if (cells == 0) {
+            raw_bits = 0; raw_avail = 0;
+            sync_count = 0;
+            if (state != DEC_SCAN_SYNC) {
+                state = DEC_SCAN_SYNC;
+                byte_bits = 0;
             }
+            continue;
         }
 
         /* Add to MFM bitstream */
