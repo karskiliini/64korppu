@@ -340,71 +340,79 @@ int mfm_capture_track(void) {
     /* Analytical calibration from histogram peaks */
     mfm_calibrate(hist10);
 
-    /* Scan for raw 0x4489 sync patterns and dump first 16 bytes after sync.
-     * This validates the delay and shows the actual sector header. */
+    /* Full capture diagnostics: cell counts + preamble detection + sync search.
+     * Scans ALL captured intervals to understand the track structure. */
     {
-        uint16_t sample = (capture_count > 20000) ? 20000 : (uint16_t)capture_count;
         sram_begin_seq_read(SRAM_RAW_CAPTURE);
+        uint8_t delay = cal_delay;
+        uint16_t cnt_2t = 0, cnt_3t = 0, cnt_4t = 0, cnt_inv = 0;
+        uint16_t run_2t = 0;           /* Current consecutive 2T count */
+        uint8_t preambles_shown = 0;   /* Max 4 preamble dumps */
+
+        /* After preamble: accumulate raw_bits and look for 0x4489 */
         uint32_t raw_bits = 0;
-        uint8_t avail = 0;
-        uint8_t sync_cnt = 0;
-        uint8_t after_sync = 0;
-        uint8_t dbyte = 0, dbits = 0;
-        uint8_t syncs_found = 0;
+        uint8_t in_post_preamble = 0;  /* >0: dumping N intervals after preamble */
 
-        TRACE("[MFM] sync scan (delay=");
-        uart_putdec(cal_delay);
-        TRACE("):\r\n");
-
-        for (uint16_t i = 0; i < sample; i++) {
+        for (uint32_t pos = 0; pos < capture_count; pos++) {
             uint8_t v = sram_seq_read_byte();
-            int16_t adj = (int16_t)v - (int16_t)cal_delay + 16;
+            int16_t adj = (int16_t)v - (int16_t)delay + 16;
             uint8_t cells;
             if (adj < 32) cells = 2;
             else {
                 cells = (uint8_t)(adj / 32);
-                if (cells > 4) { raw_bits = 0; avail = 0; sync_cnt = 0; after_sync = 0; continue; }
+                if (cells > 4) { cnt_inv++; run_2t = 0; in_post_preamble = 0; raw_bits = 0; continue; }
             }
 
-            raw_bits = (raw_bits << cells) | 1;
-            avail += cells;
-            if (avail > 30) avail = 30;
+            if (cells == 2) { cnt_2t++; run_2t++; }
+            else if (cells == 3) { cnt_3t++; run_2t = 0; }
+            else { cnt_4t++; run_2t = 0; }
 
-            if (after_sync == 0) {
+            /* Preamble detection: 20+ consecutive 2T intervals */
+            if (cells != 2 && run_2t >= 20 && preambles_shown < 4) {
+                /* Preamble just ended — dump next intervals */
+                TRACE("[MFM] preamble: ");
+                uart_putdec(run_2t);
+                TRACE("x2T @");
+                uart_putdec((uint16_t)pos);
+                TRACE(", after:");
+                in_post_preamble = 1;
+                raw_bits = 0;
+                /* Fall through to handle current interval */
+            }
+
+            if (in_post_preamble > 0 && in_post_preamble <= 20) {
+                uart_putchar(' ');
+                uart_puthex8(v);
+                uart_putchar('(');
+                uart_putchar('0' + cells);
+                uart_putchar(')');
+
+                /* Also accumulate raw_bits for sync check */
+                raw_bits = (raw_bits << cells) | 1;
                 if ((raw_bits & 0xFFFF) == MFM_RAW_SYNC) {
-                    sync_cnt++;
-                    if (sync_cnt >= 3) {
-                        after_sync = 1;
-                        dbyte = 0; dbits = 0; avail = 0;
-                        syncs_found++;
-                        TRACE("  SYNC @");
-                        uart_putdec(i);
-                        TRACE(": ");
-                    }
+                    TRACE(" *SYNC*");
                 }
-            } else {
-                /* After sync: extract bytes at offset=0 */
-                while (avail >= 2 && after_sync <= 16) {
-                    avail -= 2;
-                    dbyte = (dbyte << 1) | ((raw_bits >> avail) & 1);
-                    dbits++;
-                    if (dbits >= 8) {
-                        uart_puthex8(dbyte);
-                        uart_putchar(' ');
-                        after_sync++;
-                        dbyte = 0; dbits = 0;
-                    }
-                }
-                if (after_sync > 16) {
+
+                in_post_preamble++;
+                if (in_post_preamble > 20) {
                     TRACE("\r\n");
-                    after_sync = 0;
-                    sync_cnt = 0;
-                    if (syncs_found >= 4) break;  /* Enough samples */
+                    preambles_shown++;
+                    in_post_preamble = 0;
                 }
             }
+
+            /* Reset run_2t AFTER preamble check (cells != 2 case handled above) */
         }
         sram_end_seq();
-        if (syncs_found == 0) TRACE("  no sync found!\r\n");
+
+        TRACE("[MFM] cells: 2T=");
+        uart_putdec(cnt_2t);
+        TRACE(" 3T=");
+        uart_putdec(cnt_3t);
+        TRACE(" 4T=");
+        uart_putdec(cnt_4t);
+        TRACE(" inv=");
+        uart_putdec(cnt_inv);
         TRACE("\r\n");
     }
 
