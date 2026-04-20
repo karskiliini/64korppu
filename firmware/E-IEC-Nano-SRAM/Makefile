@@ -17,9 +17,15 @@ BAUD = 115200
 PROGRAMMER = arduino
 PORT ?= /dev/tty.usbserial-*
 
-CC = avr-gcc
-OBJCOPY = avr-objcopy
-SIZE = avr-size
+# Arduino IDE toolchain (prebuilt)
+AVR_ROOT ?= $(HOME)/Library/Arduino15/packages/arduino/tools
+AVR_GCC_DIR = $(AVR_ROOT)/avr-gcc/7.3.0-atmel3.6.1-arduino7
+AVRDUDE_DIR = $(AVR_ROOT)/avrdude/6.3.0-arduino17
+
+CC = $(AVR_GCC_DIR)/bin/avr-gcc
+OBJCOPY = $(AVR_GCC_DIR)/bin/avr-objcopy
+SIZE = $(AVR_GCC_DIR)/bin/avr-size
+AVRDUDE = $(AVRDUDE_DIR)/bin/avrdude
 
 CFLAGS = -mmcu=$(MCU) -DF_CPU=$(F_CPU) -Os -Wall -Wextra -std=c11
 CFLAGS += -ffunction-sections -fdata-sections
@@ -61,7 +67,7 @@ $(TARGET).hex: $(TARGET).elf
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 flash: $(TARGET).hex
-	avrdude -c $(PROGRAMMER) -p $(MCU) -P $(PORT) -b $(BAUD) -U flash:w:$<:i
+	$(AVRDUDE) -C $(AVRDUDE_DIR)/etc/avrdude.conf -c $(PROGRAMMER) -p $(MCU) -P $(PORT) -b $(BAUD) -U flash:w:$<:i
 
 size: $(TARGET).elf
 	@echo ""
@@ -69,5 +75,32 @@ size: $(TARGET).elf
 	$(SIZE) --mcu=$(MCU) --format=avr $<
 	@echo ""
 
+# Diagnostic: continuous floppy read for oscilloscope debugging
+READER_TARGET = floppy_reader
+READER_SRCS = $(SRCDIR)/floppy_reader.c \
+              $(SRCDIR)/sram.c \
+              $(SRCDIR)/shiftreg.c \
+              $(SRCDIR)/floppy_ctrl.c \
+              $(SRCDIR)/mfm_codec.c
+READER_OBJS = $(READER_SRCS:.c=.o)
+
+reader: $(READER_TARGET).hex reader-size
+
+$(READER_TARGET).elf: $(READER_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $^
+
+$(READER_TARGET).hex: $(READER_TARGET).elf
+	$(OBJCOPY) -O ihex -R .eeprom $< $@
+
+reader-size: $(READER_TARGET).elf
+	@echo ""
+	@echo "=== Reader Memory Usage ==="
+	$(SIZE) --mcu=$(MCU) --format=avr $<
+	@echo ""
+
+reader-flash: $(READER_TARGET).hex
+	$(AVRDUDE) -C $(AVRDUDE_DIR)/etc/avrdude.conf -c $(PROGRAMMER) -p $(MCU) -P $(PORT) -b $(BAUD) -U flash:w:$<:i
+
 clean:
 	rm -f $(OBJS) $(TARGET).elf $(TARGET).hex
+	rm -f $(READER_OBJS) $(READER_TARGET).elf $(READER_TARGET).hex
