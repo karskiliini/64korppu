@@ -2,6 +2,7 @@
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <avr/pgmspace.h>
 #include <util/delay.h>
 #include <string.h>
 
@@ -17,7 +18,15 @@
  * Reads the same track/side/sector in an infinite loop so that
  * the /RDATA signal repeats predictably for scope triggering.
  *
- * Build this instead of main.c for diagnostics.
+ * Cycle:
+ *   1. Deselect drive -> RDATA goes quiet (HIGH)
+ *   2. Wait 100ms
+ *   3. Reselect drive -> RDATA resumes with MFM data
+ *   4. Read sector
+ *   5. Repeat
+ *
+ * Build: make reader
+ * Flash: make reader-flash
  */
 
 #define READ_TRACK   0
@@ -26,8 +35,9 @@
 
 static uint8_t sector_buf[FLOPPY_SECTOR_SIZE];
 
-/* UART */
-static void uart_init(void) {
+/* --- UART implementation (required by floppy_ctrl, mfm_codec, etc.) --- */
+
+void uart_init(void) {
     uint16_t baud_setting = (F_CPU / 8 / 9600) - 1;
     UBRR0H = baud_setting >> 8;
     UBRR0L = baud_setting & 0xFF;
@@ -36,23 +46,34 @@ static void uart_init(void) {
     UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
 }
 
-static void uart_putchar(char c) {
+void uart_putchar(char c) {
     while (!(UCSR0A & (1 << UDRE0)));
     UDR0 = c;
 }
 
-static void uart_puts(const char *s) {
+void uart_puts(const char *s) {
     while (*s) uart_putchar(*s++);
 }
 
-static void uart_puthex(uint8_t val) {
+void uart_puts_P(const char *s) {
+    char c;
+    while ((c = pgm_read_byte(s++)) != '\0')
+        uart_putchar(c);
+}
+
+void uart_puthex8(uint8_t val) {
     const char hex[] = "0123456789ABCDEF";
     uart_putchar(hex[val >> 4]);
     uart_putchar(hex[val & 0x0F]);
 }
 
-static void uart_putdec(uint32_t val) {
-    char buf[10];
+void uart_puthex16(uint16_t val) {
+    uart_puthex8(val >> 8);
+    uart_puthex8(val & 0xFF);
+}
+
+void uart_putdec(uint16_t val) {
+    char buf[6];
     int i = 0;
     if (val == 0) { uart_putchar('0'); return; }
     while (val > 0) {
@@ -62,13 +83,21 @@ static void uart_putdec(uint32_t val) {
     while (i > 0) uart_putchar(buf[--i]);
 }
 
+/* --- IEC stub (floppy_ctrl calls iec_poll during waits) --- */
+
+void iec_poll(void) {
+    /* No-op: reader doesn't use IEC bus */
+}
+
+/* --- Main --- */
+
 int main(void) {
     cli();
     uart_init();
 
-    uart_puts("\r\n=== 64korppu floppy reader ===\r\n");
-    uart_puts("Continuous read for scope debugging\r\n");
-    uart_puts("T0 S0 Sec1\r\n\r\n");
+    uart_puts_P(PSTR("\r\n=== 64korppu floppy reader ===\r\n"));
+    uart_puts_P(PSTR("Continuous read for scope debugging\r\n"));
+    uart_puts_P(PSTR("T0 S0 Sec1\r\n\r\n"));
 
     sram_init();
     shiftreg_init();
@@ -78,32 +107,18 @@ int main(void) {
     floppy_motor_on();
     int rc = floppy_recalibrate();
     if (rc != FLOPPY_OK) {
-        uart_puts("ERR: no track 0\r\n");
+        uart_puts_P(PSTR("ERR: no track 0\r\n"));
         while (1);
     }
-    uart_puts("Drive OK\r\n");
+    uart_puts_P(PSTR("Drive OK\r\n"));
 
-    /* Seek once, select side once */
     floppy_seek(READ_TRACK);
     floppy_select_side(READ_SIDE);
 
     sei();
 
-    uint32_t count = 0;
+    uint16_t count = 0;
 
-    /*
-     * Infinite read loop with quiet gap for scope triggering.
-     *
-     * Cycle:
-     *   1. Deselect drive → RDATA goes quiet (HIGH)
-     *   2. Wait 100ms → clear quiet period for scope
-     *   3. Reselect drive → RDATA becomes active with MFM data
-     *   4. Read sector
-     *   5. Repeat
-     *
-     * Trigger scope on CH1 falling edge — the first RDATA pulse
-     * after the quiet gap is always the same track position.
-     */
     while (1) {
         count++;
 
@@ -120,11 +135,11 @@ int main(void) {
 
         uart_putdec(count);
         if (rc == FLOPPY_OK) {
-            uart_puts(" OK\r\n");
+            uart_puts_P(PSTR(" OK\r\n"));
         } else {
-            uart_puts(" ERR ");
-            uart_putdec((uint32_t)(-(int16_t)rc));
-            uart_puts("\r\n");
+            uart_puts_P(PSTR(" ERR "));
+            uart_putdec((uint16_t)(-(int16_t)rc));
+            uart_puts_P(PSTR("\r\n"));
         }
     }
 
