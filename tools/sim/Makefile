@@ -39,20 +39,23 @@ run: $(TARGET) firmware
 
 # Scenario matrix: nominal, 23LC256, slow/fast motor, jitter
 test: $(TARGET) firmware
-	@echo "=== [1/5] nominal (23LC512) ==="
+	@echo "=== [1/6] nominal (23LC512) ==="
 	./$(TARGET) $(FIRMWARE) -t 15000 -reads 3
 	@echo ""
-	@echo "=== [2/5] 23LC256 (32KB, address aliasing) ==="
+	@echo "=== [2/6] 23LC256 (32KB, address aliasing) ==="
 	./$(TARGET) $(FIRMWARE) -t 60000 -reads 2 -allow-err 3 -sram256
 	@echo ""
-	@echo "=== [3/5] motor +1.5% ==="
+	@echo "=== [3/6] motor +1.5% ==="
 	./$(TARGET) $(FIRMWARE) -t 30000 -reads 2 -allow-err 1 -speed-ppm 15000
 	@echo ""
-	@echo "=== [4/5] motor -1.5% ==="
+	@echo "=== [4/6] motor -1.5% ==="
 	./$(TARGET) $(FIRMWARE) -t 30000 -reads 2 -allow-err 1 -speed-ppm -15000
 	@echo ""
-	@echo "=== [5/5] jitter ±2 ticks (±125ns) ==="
+	@echo "=== [5/6] jitter ±2 ticks (±125ns) ==="
 	./$(TARGET) $(FIRMWARE) -t 30000 -reads 2 -allow-err 1 -jitter 2
+	@echo ""
+	@echo "=== [6/6] eccentric clamp wobble ±10% + jitter (software PLL) ==="
+	./$(TARGET) $(FIRMWARE) -t 30000 -reads 2 -allow-err 1 -wobble-ppm 100000 -jitter 1
 	@echo ""
 	@echo "=== SimAVR scenario matrix: ALL PASS ==="
 

@@ -69,14 +69,73 @@ static uint8_t cal_thr_23;    /* interval < thr_23  → 2T */
 static uint8_t cal_thr_34;    /* interval < thr_34  → 3T */
 static uint8_t cal_thr_4max;  /* interval < thr_4max → 4T, else invalid */
 
-/* Classify interval using calibrated thresholds.
- * Returns 2, 3, 4 (valid) or 0 (invalid/noise). */
+/* ---- Software PLL: adaptive half-cell period tracking ---- */
+
+/*
+ * Real FDCs track the bit-cell grid with a hardware PLL. We have no
+ * PLL in hardware, but because decode runs OFFLINE on raw captured
+ * intervals, the PLL can live entirely in software with no real-time
+ * cost: a first-order period tracker, the same scheme flux tools like
+ * Greaseweazle/FluxEngine use.
+ *
+ * The half-cell period T is kept in 8.8 fixed point (nominal 1µs =
+ * 16 ticks = 0x1000). For each interval d:
+ *
+ *   cells = nearest of 2/3/4  (boundaries at 1.5T / 2.5T / 3.5T / 4.5T)
+ *   error = d - cells*T       (per-transition timing error)
+ *   T    += (error/cells) >> PLL_GAIN_SHIFT
+ *
+ * Effective loop gain ≈ 1/16 per cell — fast enough to track motor
+ * speed drift and once-per-revolution wobble (eccentric clamping),
+ * slow enough not to chase bit-shift jitter. T is clamped to ±~20% of
+ * nominal so a burst of noise cannot run the tracker away, and the
+ * period is re-seeded from the histogram calibration at the start of
+ * every decode pass.
+ *
+ * This tracks frequency, not absolute phase — quantizing each
+ * interval to the nearest cell count IS the phase decision, so a
+ * separate phase accumulator is unnecessary at these SNR levels.
+ */
+#define PLL_T_NOMINAL   ((uint16_t)16 << 8)
+#define PLL_T_MIN       ((uint16_t)13 << 8)
+#define PLL_T_MAX       ((uint16_t)19 << 8)
+#define PLL_GAIN_SHIFT  4
+
+static uint16_t pll_seed = PLL_T_NOMINAL;   /* set by calibration */
+static uint16_t pll_period = PLL_T_NOMINAL; /* live tracker state */
+
+void mfm_pll_reset(void) { pll_period = pll_seed; }
+uint16_t mfm_pll_period(void) { return pll_period; }
+
+/* Classify one interval against the tracked grid and update the
+ * tracker. Returns 2, 3, 4 (valid) or 0 (invalid/noise — tracker is
+ * left untouched so glitches cannot disturb it). */
 static inline uint8_t mfm_classify(uint8_t interval) {
-    if (interval < 20) return 0;              /* < 1.25µs: noise/glitch */
-    if (interval < cal_thr_23) return 2;
-    if (interval < cal_thr_34) return 3;
-    if (interval < cal_thr_4max) return 4;
-    return 0;
+    uint16_t d = (uint16_t)interval << 8;
+    uint16_t T = pll_period;
+
+    uint8_t cells;
+    if (d < (uint16_t)(T + (T >> 1))) return 0;            /* < 1.5T */
+    if      (d < (uint16_t)(2 * T + (T >> 1))) cells = 2;  /* < 2.5T */
+    else if (d < (uint16_t)(3 * T + (T >> 1))) cells = 3;  /* < 3.5T */
+    else if (d < (uint16_t)(4 * T + (T >> 1))) cells = 4;  /* < 4.5T */
+    else return 0;                                         /* ≥ 4.5T */
+
+    /* error / cells via cheap shift approximations:
+     * /2 exact, /3 ≈ 0.3125, /4 exact. Arithmetic >> on negative
+     * int16 is well-defined (arithmetic shift) on avr-gcc/gcc. */
+    int16_t err = (int16_t)(d - cells * T);
+    int16_t adj;
+    if (cells == 2)      adj = err >> 1;
+    else if (cells == 3) adj = (err >> 2) + (err >> 4);
+    else                 adj = err >> 2;
+
+    T = (uint16_t)((int16_t)T + (adj >> PLL_GAIN_SHIFT));
+    if (T < PLL_T_MIN) T = PLL_T_MIN;
+    if (T > PLL_T_MAX) T = PLL_T_MAX;
+    pll_period = T;
+
+    return cells;
 }
 
 /* ---- CRC ---- */
@@ -109,6 +168,8 @@ void mfm_set_default_thresholds(void) {
     cal_thr_23   = MFM_THRESHOLD_SHORT;   /* 40 */
     cal_thr_34   = MFM_THRESHOLD_MEDIUM;  /* 56 */
     cal_thr_4max = MFM_THRESHOLD_LONG;    /* 76 */
+    pll_seed = PLL_T_NOMINAL;
+    pll_period = PLL_T_NOMINAL;
 }
 
 /* ---- Calibration ---- */
@@ -159,6 +220,11 @@ static void mfm_calibrate(uint16_t *hist10) {
     cal_thr_23   = (uint8_t)((center_lo + center_hi) / 2);   /* ~40 */
     cal_thr_34   = (uint8_t)(center_hi + spacing / 2);       /* ~56 */
     cal_thr_4max = (uint8_t)(cal_thr_34 + spacing);          /* ~72 */
+
+    /* Seed the software PLL: 2T cluster center / 2 = half-cell T,
+     * in 8.8 fixed point (<<8 then /2 = <<7). */
+    pll_seed = (uint16_t)center_lo << 7;
+    pll_period = pll_seed;
 
     TRACE("[MFM] cal: peaks ");
     uart_putdec(center_lo);
@@ -379,15 +445,15 @@ typedef enum {
 } decode_state_t;
 
 int mfm_decode_sector(uint8_t sector, uint8_t *data_out) {
+    mfm_pll_reset();
+
     TRACE("[MFM] decode R=");
     uart_putdec(sector);
-    TRACE(" thr=");
-    uart_putdec(cal_thr_23);
-    uart_putchar('/');
-    uart_putdec(cal_thr_34);
-    uart_putchar('/');
-    uart_putdec(cal_thr_4max);
-    TRACE("\r\n");
+    TRACE(" T=");
+    uart_putdec(pll_period >> 8);
+    uart_putchar('.');
+    uart_putdec((uint16_t)(pll_period & 0xFF) * 100 / 256);
+    TRACE(" (PLL)\r\n");
 
     uint32_t raw_bits = 0;
     uint8_t raw_avail = 0;

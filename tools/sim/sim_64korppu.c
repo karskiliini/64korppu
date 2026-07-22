@@ -98,6 +98,8 @@ static struct {
 
 static int speed_ppm = 0;    /* motor speed error, e.g. +15000 = +1.5% */
 static int jitter_ticks = 0; /* ± per-edge jitter in 62.5ns ticks */
+static int wobble_ppm = 0;   /* sinusoidal once-per-rev speed wobble
+                                (eccentric disk clamping), amplitude */
 
 /* ── Simulation state ──────────────────────────────────────────────── */
 
@@ -206,10 +208,13 @@ static void floppy_build_rotation(void) {
 
     floppy.edge_cycle = calloc(floppy.image.count, sizeof(uint64_t));
     double speed = 1.0 + speed_ppm / 1e6;
+    double wobble = wobble_ppm / 1e6;
     uint64_t acc = 0;
     tg_srand(0xF10BB7);
     for (int i = 0; i < floppy.image.count; i++) {
-        double ticks = floppy.image.cells[i] * 16.0 * speed;
+        double s = speed *
+            (1.0 + wobble * sin(2.0 * M_PI * i / floppy.image.count));
+        double ticks = floppy.image.cells[i] * 16.0 * s;
         long t = lrint(ticks);
         if (jitter_ticks)
             t += (long)(tg_rand() % (2 * jitter_ticks + 1)) - jitter_ticks;
@@ -218,9 +223,10 @@ static void floppy_build_rotation(void) {
         floppy.edge_cycle[i] = acc;
     }
     floppy.rev_cycles = acc;
-    printf("[SIM] track: %d flux transitions, %.2f ms/rev (speed %+d ppm, jitter ±%d ticks)\n",
+    printf("[SIM] track: %d flux transitions, %.2f ms/rev "
+           "(speed %+d ppm, wobble ±%d ppm, jitter ±%d ticks)\n",
            floppy.image.count, floppy.rev_cycles / 16000.0,
-           speed_ppm, jitter_ticks);
+           speed_ppm, wobble_ppm, jitter_ticks);
 }
 
 /* ── UART capture + result parsing ─────────────────────────────────── */
@@ -430,6 +436,8 @@ int main(int argc, char *argv[])
             speed_ppm = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-jitter") && i + 1 < argc)
             jitter_ticks = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-wobble-ppm") && i + 1 < argc)
+            wobble_ppm = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-allow-err") && i + 1 < argc)
             allow_err = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-sram256"))

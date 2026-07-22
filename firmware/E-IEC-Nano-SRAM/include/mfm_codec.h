@@ -35,6 +35,12 @@ void mfm_calibrate_capture(void);
 void mfm_set_capture_count(uint16_t n);
 uint16_t mfm_get_capture_count(void);
 
+/* Software PLL (adaptive half-cell period, 8.8 fixed point).
+ * Reset re-seeds from the latest calibration; mfm_decode_sector does
+ * this automatically at the start of each pass. */
+void mfm_pll_reset(void);
+uint16_t mfm_pll_period(void);
+
 /* Decode a sector from the captured track in SRAM */
 int mfm_decode_sector(uint8_t sector, uint8_t *data_out);
 

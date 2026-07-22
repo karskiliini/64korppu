@@ -367,13 +367,35 @@ reunaa ehti saapua ISR:n ollessa varattuna.
 Pollatulla capturella ilmiötä ei ole: kiinteät kynnykset 40/56/76
 luokittelevat nimelliset 32/48/64-klusterit oikein.
 
-### Miksi PLL olisi silti parempi
+### Software-PLL (toteutettu)
 
-PC:n floppy-kontrollerit käyttävät **PLL:ää** joka seuraa signaalin
-vaihetta ja sopeutuu moottorin nopeusvaihteluun (±1-2%). Kiinteät
-kynnykset toimivat, koska klusterien väli (16 tikkiä) on suuri
-suhteessa jitteriin, mutta PLL antaisi lisämarginaalia huonokuntoisille
-levyille.
+PC:n floppy-kontrollerit käyttävät rauta-PLL:ää, joka seuraa signaalin
+jaksoa. Meillä ei ole PLL:ää raudassa — mutta koska dekoodaus ajetaan
+**jälkikäteen raakaintervalleista**, PLL voidaan toteuttaa puhtaasti
+softassa ilman reaaliaikavaatimuksia. Sama ratkaisu kuin
+Greaseweazle/FluxEngine-tyyppisissä flux-työkaluissa.
+
+Toteutus (`mfm_codec.c`, `mfm_classify`): ensimmäisen kertaluvun
+jaksonseuraaja. Puolisolun jakso T pidetään 8.8-kiintopisteenä
+(nimellinen 16.0 tikkiä):
+
+```
+cells = lähin 2/3/4      (rajat 1.5T / 2.5T / 3.5T / 4.5T)
+error = intervalli - cells×T
+T    += (error/cells) >> 4
+```
+
+- Silmukkavahvistus ~1/16 per solu: seuraa moottorin ryömintää ja
+  kierroskohtaista huojuntaa (epäkeskeinen kiinnitys), muttei lähde
+  jahtaamaan bittisiirtymäjitteriä.
+- T clampataan ±20 % nimellisestä, ja siemen otetaan
+  histogrammikalibroinnista jokaisen dekoodauksen alussa.
+- Kohinaintervallit (< 1.5T tai ≥ 4.5T) eivät päivitä seuraajaa.
+
+Todennettu testeillä, joissa kiinteät kynnykset eivät selviä:
+±13 % sinihuojunta kierroksen sisällä ja -10 % → +10 % nopeusramppi
+capture-ikkunan poikki (test_mfm_decode: test_pll_*), sekä
+simavr-emulaatiossa aidolla binäärillä (±10 % wobble -skenaario).
 
 ---
 

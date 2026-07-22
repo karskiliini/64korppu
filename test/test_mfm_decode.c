@@ -71,6 +71,37 @@ static uint16_t load_capture(const tg_track_t *t, int start, int count,
     return (uint16_t)count;
 }
 
+/*
+ * Load a capture with position-dependent speed:
+ *   mode 0: sinusoidal wobble (eccentric disk clamping) — speed
+ *           modulates with the rotation angle, amplitude `amp`
+ *   mode 1: linear ramp from (1-amp) to (1+amp) across the window
+ *           (e.g. motor still settling)
+ */
+static uint16_t load_capture_var(const tg_track_t *t, int start, int count,
+                                 int mode, double amp, int jitter) {
+    if (count > (int)SRAM_RAW_CAPTURE_SIZE) count = SRAM_RAW_CAPTURE_SIZE;
+    sram_begin_seq_write(SRAM_RAW_CAPTURE);
+    for (int i = 0; i < count; i++) {
+        int pos = (start + i) % t->count;
+        double speed;
+        if (mode == 0) {
+            speed = 1.0 + amp * sin(2.0 * M_PI * pos / t->count);
+        } else {
+            speed = 1.0 - amp + 2.0 * amp * i / count;
+        }
+        double ticks = t->cells[pos] * 16.0 * speed;
+        int j = jitter ? (int)(tg_rand() % (2 * jitter + 1)) - jitter : 0;
+        int v = (int)lround(ticks) + j;
+        if (v < 1) v = 1;
+        if (v > 255) v = 255;
+        sram_seq_write_byte((uint8_t)v);
+    }
+    sram_end_seq();
+    mfm_set_capture_count((uint16_t)count);
+    return (uint16_t)count;
+}
+
 /* Approximate interval index where sector r's ID field begins */
 static int sector_start_index(const tg_track_t *t, int r) {
     double frac = (80.0 + (r - 1) * 628.0) / (double)TG_TRACK_BYTES;
@@ -262,6 +293,46 @@ static int test_corrupt_id_crc_rejected(void) {
     return 1;
 }
 
+static int test_pll_eccentric_clamp_wobble(void) {
+    /* Eccentric clamping: disk speed modulates sinusoidally ±13%
+     * within one revolution. Fixed thresholds cannot follow this;
+     * the software PLL tracks the drift transition by transition. */
+    build_nominal();
+    tg_srand(0xECC0);
+    mfm_set_default_thresholds();
+    for (int r = 1; r <= TG_SECTORS; r += 4) {
+        load_capture_var(&track, sector_start_index(&track, r), 50000,
+                         0, 0.13, 1);
+        mfm_calibrate_capture();
+        int rc = mfm_decode_sector((uint8_t)r, decoded);
+        ASSERT(rc == FLOPPY_OK);
+        ASSERT(memcmp(decoded, sector_data[r - 1], TG_SECTOR_SIZE) == 0);
+    }
+    return 1;
+}
+
+static int test_pll_speed_ramp_in_capture(void) {
+    /* Motor still settling: speed ramps -10% → +10% ACROSS the
+     * capture window, plus ±2 tick jitter. At the extremes the 3T/4T
+     * clusters sit on top of the static threshold boundaries — only
+     * period tracking decodes this reliably. */
+    build_nominal();
+    tg_srand(0x4A3B);
+    mfm_set_default_thresholds();
+    load_capture_var(&track, sector_start_index(&track, 2), 50000,
+                     1, 0.10, 2);
+    mfm_calibrate_capture();
+    int rc = mfm_decode_sector(2, decoded);
+    ASSERT(rc == FLOPPY_OK);
+    ASSERT(memcmp(decoded, sector_data[1], TG_SECTOR_SIZE) == 0);
+
+    /* Sector near the fast end of the ramp */
+    int rc2 = mfm_decode_sector(10, decoded);
+    ASSERT(rc2 == FLOPPY_OK);
+    ASSERT(memcmp(decoded, sector_data[9], TG_SECTOR_SIZE) == 0);
+    return 1;
+}
+
 static int test_calibration_tracks_speed(void) {
     /* At +6% speed the 4T cluster sits at ~68 ticks; after calibration
      * thresholds must follow the clusters and decode still works. */
@@ -293,6 +364,8 @@ int main(void) {
     RUN_TEST(test_corrupt_data_crc_detected);
     RUN_TEST(test_corrupt_id_crc_rejected);
     RUN_TEST(test_calibration_tracks_speed);
+    RUN_TEST(test_pll_eccentric_clamp_wobble);
+    RUN_TEST(test_pll_speed_ramp_in_capture);
 
     printf("\n========================================\n");
     printf("Results: %d/%d passed\n", tests_passed, tests_run);
