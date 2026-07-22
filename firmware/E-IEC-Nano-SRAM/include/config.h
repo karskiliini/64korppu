@@ -16,11 +16,14 @@
 #define SRAM_MFM_TRACK      0x00000UL   /* MFM decoded track buffer */
 #define SRAM_MFM_TRACK_SIZE 12496
 
-/* Raw capture buffer: stores uint8_t timer intervals during ISR capture.
+/* Raw capture buffer: stores uint8_t timer intervals during polled capture.
  * Occupies entire SRAM during capture (other buffers not needed then).
- * ~50000 intervals ≈ 1 revolution at HD 500kbps. */
+ * HD 500kbps: ~74000 flux-transitiota/kierros (keskiväli ~2.7µs), joten
+ * 50000 intervallia ≈ 0.7 kierrosta. Retry-silmukka kattaa loput.
+ * HUOM: rajataan ajonaikaisesti sram_capacity():n mukaan — 23LC256
+ * (32KB) kiertäisi muuten ympäri ja korruptoisi capturen. */
 #define SRAM_RAW_CAPTURE      0x00000UL
-#define SRAM_RAW_CAPTURE_SIZE 50000UL
+#define SRAM_RAW_CAPTURE_SIZE 50000U
 
 #define SRAM_FAT_CACHE      0x030D0UL   /* FAT table cache (9 sectors) */
 #define SRAM_FAT_CACHE_SIZE 4608        /* 9 * 512 */
@@ -37,10 +40,10 @@
 
 /* LZ4 compression buffers (in external SRAM, not internal RAM) */
 #define SRAM_COMP_RAW       0x058D0UL   /* Raw data before compression */
-#define SRAM_COMP_RAW_SIZE  512         /* = COMPRESS_BLOCK_SIZE */
+#define SRAM_COMP_RAW_SIZE  128         /* = COMPRESS_BLOCK_SIZE */
 #define SRAM_COMP_FRAME     0x05AD0UL   /* Framed LZ4 output */
-#define SRAM_COMP_FRAME_SIZE 556        /* = COMPRESS_FRAME_BUF_SIZE */
-                                        /* Vapaa: 0x05D0C - 0x0FFFF = ~41.2 KB */
+#define SRAM_COMP_FRAME_SIZE 172        /* = COMPRESS_FRAME_BUF_SIZE */
+                                        /* Vapaa: 0x05B7C - 0x0FFFF = ~41.5 KB */
 
 /* --- Floppy Geometry --- */
 
@@ -139,8 +142,9 @@
 #define IEC_CMD_UNLISTEN    0x3F
 #define IEC_CMD_TALK        0x40
 #define IEC_CMD_UNTALK      0x5F
-#define IEC_CMD_OPEN        0x60
-#define IEC_CMD_CLOSE       0xE0
+#define IEC_CMD_SECOND      0x60    /* 0x60-0x6F: data channel select (SA) */
+#define IEC_CMD_CLOSE       0xE0    /* 0xE0-0xEF: CLOSE + SA */
+#define IEC_CMD_OPEN        0xF0    /* 0xF0-0xFF: OPEN + SA (filename follows) */
 
 /* Secondary addresses */
 #define IEC_SA_LOAD          0
@@ -159,21 +163,28 @@
 
 /* --- MFM Codec --- */
 
-/* At 16MHz timer, HD 500kbps: bit cell = 2µs = 32 ticks */
-#define MFM_TICKS_PER_CELL_HD    32
+/*
+ * HD 500 kbit/s MFM: databitti = 2µs, puolisolu (T) = 1µs = 16 tikkiä.
+ * Flux-transitioiden välit ovat 2T/3T/4T = 2/3/4 µs = 32/48/64 tikkiä
+ * (16MHz Timer1, ei prescaleria).
+ *
+ * Kirjoituspuoli: wait_bit_cell() odottaa yhden puolisolun (16 tikkiä)
+ * ja sitä kutsutaan kahdesti per databitti → 2µs/bitti = 500 kbit/s.
+ *
+ * HUOM: aiempi versio oletti 2T=64 tikkiä (4µs) — se on DD 250 kbit/s
+ * -ajoitus, ei HD. Mitatut "klusterit" ~107/133/155 tikkiä olivat
+ * ISR-pohjaisen capturen oman palveluajan artefakteja, eivät levyn
+ * signaalia (ks. mfm_codec.c: polled capture).
+ */
+#define MFM_TICKS_PER_CELL_HD    16
 /*
  * Pulse classification thresholds (Timer1 ticks at 16MHz).
- *
- * Nominal HD 500kbps intervals: 2T=64, 3T=96, 4T=128 ticks.
- * With 74LS14 Schmitt-trigger (1.7V threshold): delay is much
- * smaller than with raw CMOS input (~10-40 ticks vs ~109 ticks).
- * Brute-force calibration finds the actual delay at runtime.
- * Default here is just the initial fallback.
+ * Nominaalit 32/48/64; rajat klusterien puolivälissä. Kalibrointi
+ * (mfm_calibrate) säätää nämä mitatuista klustereista ajon aikana.
  */
-#define MFM_PULLUP_DELAY        30      /* Measured: 2T≈107, 3T≈133, 4T≈155 (74LS14) */
-#define MFM_THRESHOLD_SHORT     (80  + MFM_PULLUP_DELAY)   /* < 110: 2T */
-#define MFM_THRESHOLD_MEDIUM    (112 + MFM_PULLUP_DELAY)   /* < 142: 3T */
-#define MFM_THRESHOLD_LONG      (160 + MFM_PULLUP_DELAY)   /* < 190: 4T */
+#define MFM_THRESHOLD_SHORT     40    /* < 40: 2T */
+#define MFM_THRESHOLD_MEDIUM    56    /* < 56: 3T */
+#define MFM_THRESHOLD_LONG      76    /* < 76: 4T, muuten virhe */
 
 /* MFM address marks */
 #define MFM_SYNC_BYTE   0xA1
@@ -199,16 +210,20 @@
  * Hash-taulu (COMPRESS_HASH_SIZE × 2 tavua) on pinossa
  * kompression aikana: 256 × 2 = 512 tavua.
  *
- * 512B lohkokoko = FAT12-sektorikoko → suoraviivainen pipeline.
+ * Lohkokoko 128B: pakkauspolun hetkellinen pinonkulutus on
+ * raw(128) + frame(172) + hash(256) ≈ 556B. Aiempi 512B lohko vaati
+ * ~1.6KB pinoa, mikä ei mahdu ATmega328P:n 2KB RAMiin staattisen
+ * datan (~1.1KB) rinnalle → pinovuoto. Kehysformaatissa on raw_size-
+ * kenttä, joten lohkokoon muutos ei riko purkupuolta.
  *
- * COMPRESS_HASH_SIZE pitää olla sama kuin COMPRESS_BLOCK_SIZE
- * (hash-taulun koko = lohkokoko entryjä × 2 tavua pinossa).
+ * COMPRESS_HASH_SIZE = hash-taulun entrymäärä (2 tavua/entry pinossa),
+ * pitää olla 2:n potenssi ja ≤ 256 (lz4_hash palauttaa uint8_t).
  *
  * COMPRESS_FRAME_BUF_SIZE = 4 (header) + BLOCK_SIZE + BLOCK_SIZE/255 + 16
  * (worst case: ei-pakattava data + LZ4 token overhead).
  */
-#define COMPRESS_BLOCK_SIZE     512
-#define COMPRESS_HASH_SIZE      256
-#define COMPRESS_FRAME_BUF_SIZE 556
+#define COMPRESS_BLOCK_SIZE     128
+#define COMPRESS_HASH_SIZE      128
+#define COMPRESS_FRAME_BUF_SIZE 172
 
 #endif /* CONFIG_H */

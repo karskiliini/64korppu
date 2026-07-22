@@ -36,6 +36,10 @@
 
 void sram_init(void);
 
+/* Detected chip size in bytes (32768 = 23LC256, 65536 = 23LC512).
+ * Valid after sram_init(). Capture code clamps its buffer to this. */
+uint32_t sram_capacity(void);
+
 void sram_read(uint32_t addr, uint8_t *buf, uint16_t len);
 void sram_write(uint32_t addr, const uint8_t *buf, uint16_t len);
 

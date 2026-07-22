@@ -80,64 +80,41 @@ void floppy_motor_on(void) {
         PORTB |= (1 << FLOPPY_LED_PIN);  /* LED on */
 
         /*
-         * Wait for motor to reach stable speed by monitoring /RDATA (ICP1).
-         * Valid MFM intervals (with pull-up delay compensation) must be
-         * within the expected range. We require 16 consecutive valid
-         * intervals and track the average to verify correct RPM.
+         * Wait for the motor to spin up by monitoring /RDATA activity.
          *
-         * Timeout 1000ms. IEC serviced during wait.
+         * A healthy MFM stream produces a flux edge every 2-4µs, so
+         * ICF1 is set in essentially every 1ms polling window. Require
+         * 30 consecutive windows with at least one edge (~30ms of
+         * continuous signal). Timeout 1000ms. IEC serviced during wait.
+         *
+         * NOTE: the old code tried to measure MFM intervals between
+         * 1ms polls — the two sampled ICR1 values were ~1ms apart, so
+         * the "interval" was ~16000 ticks and never in range, and it
+         * printed "no /RDATA" even with a perfect signal.
          */
-        uint16_t prev = ICR1;
-        uint8_t valid_count = 0;
-        uint32_t interval_sum = 0;
+        uint8_t active_count = 0;
         bool ready = false;
         uint16_t ms;
 
+        TIFR1 = (1 << ICF1);
         for (ms = 0; ms < 1000 && !ready; ms++) {
             _delay_ms(1);
+            iec_poll();
 
-            /* Check for ICP events */
             if (TIFR1 & (1 << ICF1)) {
-                uint16_t now = ICR1;
-                uint16_t interval = now - prev;
-                prev = now;
                 TIFR1 = (1 << ICF1);
-
-                /* Valid MFM interval? (2T..4T with pull-up compensation) */
-                if (interval >= 40 && interval <= (MFM_THRESHOLD_LONG + 40)) {
-                    interval_sum += interval;
-                    valid_count++;
-                    if (valid_count >= 16) {
-                        ready = true;
-                    }
-                } else {
-                    valid_count = 0;
-                    interval_sum = 0;
+                if (++active_count >= 30) {
+                    ready = true;
                 }
+            } else {
+                active_count = 0;
             }
         }
 
         if (ready) {
-            uint16_t avg = (uint16_t)(interval_sum / 16);
             TRACE("[FLP] motor ready after ");
             uart_putdec(ms);
-            TRACE("ms, avg interval=");
-            uart_putdec(avg);
-            TRACE(" ticks\r\n");
-
-            /* Verify RPM: average interval should be ~92-120 ticks
-             * (HD MFM 2T-3T mix with pull-up delay).
-             * If >> 150, motor is too slow (wrong voltage?).
-             * If << 50, signal is noise (not real MFM). */
-            if (avg > 170) {
-                TRACE("[FLP] WARNING: motor too slow! avg=");
-                uart_putdec(avg);
-                TRACE(" (expected ~100). Check 12V supply.\r\n");
-            } else if (avg < 50) {
-                TRACE("[FLP] WARNING: signal too fast, noise? avg=");
-                uart_putdec(avg);
-                TRACE("\r\n");
-            }
+            TRACE("ms (/RDATA active)\r\n");
         } else {
             TRACE("[FLP] motor spin-up timeout (no /RDATA)\r\n");
         }

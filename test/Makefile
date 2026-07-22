@@ -8,7 +8,7 @@ NANO_SRC = ../firmware/E-IEC-Nano-SRAM/src
 
 .PHONY: all test clean
 
-all: test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload test_nano_shiftreg test_nano_lz4 vice/iec_bridge
+all: test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload test_nano_shiftreg test_nano_lz4 test_mfm_sync vice/iec_bridge
 
 # Unit tests for D64 module
 test_d64: test_d64.c mock_fat12.c $(FIRMWARE_SRC)/d64.c
@@ -42,12 +42,16 @@ test_nano_shiftreg: test_nano_shiftreg.c
 test_nano_lz4: test_nano_lz4.c $(NANO_SRC)/lz4_compress.c $(NANO_SRC)/compress_proto.c
 	$(CC) $(CFLAGS) $(NANO_INCLUDES) -o $@ $^
 
+# Regression test for MFM sync detection (mirrors mfm_codec.c logic)
+test_mfm_sync: test_mfm_sync.c
+	$(CC) $(CFLAGS) $(NANO_INCLUDES) -o $@ $^
+
 # VICE IEC bridge (host build of CBM-DOS + D64)
 vice/iec_bridge: vice/iec_bridge.c vice/mock_iec.c mock_fat12.c \
                   $(FIRMWARE_SRC)/d64.c $(FIRMWARE_SRC)/cbm_dos.c
 	$(CC) $(CFLAGS) $(INCLUDES) -Ivice -o $@ $^
 
-test: test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload test_nano_shiftreg test_nano_lz4
+test: test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload test_nano_shiftreg test_nano_lz4 test_mfm_sync
 	@echo "=== Running D64 tests ==="
 	./test_d64
 	@echo ""
@@ -68,6 +72,9 @@ test: test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload test_na
 	@echo ""
 	@echo "=== Running Nano LZ4 Compress tests ==="
 	./test_nano_lz4
+	@echo ""
+	@echo "=== Running MFM Sync tests ==="
+	./test_mfm_sync
 
 clean:
-	rm -f test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload test_nano_shiftreg test_nano_lz4 vice/iec_bridge
+	rm -f test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload test_nano_shiftreg test_nano_lz4 test_mfm_sync vice/iec_bridge

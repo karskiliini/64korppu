@@ -63,7 +63,7 @@ Kaikki floppy-signaalit ovat aktiivisia LOW-tilassa (negatiivinen logiikka).
 |------|----------|----------|------------|----------|
 | TP6 | FLOPPY_MOTOR | HIGH (~5V) | LOW (0V) | **Moottorin käynnistys.** LOW = moottori pyörii. Tarkista: aseman moottori pyörii kun LOW. Jos HIGH eikä moottori pyöri, signaali ei kulje. |
 | TP7 | FLOPPY_STEP | HIGH (~5V) | pulssi LOW | **Askelpulssi.** Jokainen LOW-pulssi siirtää lukupäätä yhden raidan. Seuraavien aikana pitäisi näkyä 3ms pulsseja oskilloskoopilla. |
-| TP8 | FLOPPY_RDATA | HIGH (~5V) | pulssijuna | **Luettu data (MFM).** Nopea pulssijuna (~4-8µs väli) kun asema lukee levyä. Vaatii oskilloskoopin. Jos pysyy HIGH levyn pyöriessä, lukupää tai asema on viallinen. |
+| TP8 | FLOPPY_RDATA | HIGH (~5V) | pulssijuna | **Luettu data (MFM).** Nopea pulssijuna (HD-levyllä 2-4µs väli, ~150-250ns LOW-pulssit) kun asema lukee levyä. Vaatii oskilloskoopin. Jos pysyy HIGH levyn pyöriessä, lukupää tai asema on viallinen. |
 | TP9 | FLOPPY_WDATA | HIGH (~5V) | pulssijuna | **Kirjoitettava data (MFM).** Nopea pulssijuna kirjoituksen aikana. Vaatii oskilloskoopin. |
 | TP10 | FLOPPY_SIDE1 | HIGH (~5V) | LOW (0V) | **Levyn puoli.** HIGH = puoli 0 (yläpuoli), LOW = puoli 1 (alapuoli). DD-levyillä vain puoli 0. |
 

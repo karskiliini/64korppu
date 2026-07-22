@@ -21,6 +21,8 @@
 #define CS_LOW()    (PORTB &= ~(1 << SPI_CS_SRAM))
 #define CS_HIGH()   (PORTB |= (1 << SPI_CS_SRAM))
 
+static uint32_t capacity = 0x10000UL;  /* Set by sram_init() size probe */
+
 static inline uint8_t spi_transfer(uint8_t data) {
     SPDR = data;
     while (!(SPSR & (1 << SPIF)));
@@ -63,6 +65,23 @@ void sram_init(void) {
     } else {
         TRACE(" FAIL!\r\n");
     }
+
+    /* Detect chip size: on a 23LC256 address bit 15 is ignored, so
+     * 0x8000 aliases to 0x0000. Write different bytes to both and see
+     * whether 0x0000 survives. */
+    sram_write_byte(0x0000, 0x55);
+    sram_write_byte(0x8000, 0xAA);
+    if (sram_read_byte(0x0000) == 0x55) {
+        capacity = 0x10000UL;   /* 23LC512, 64KB */
+        TRACE("[SRAM] 64KB (23LC512)\r\n");
+    } else {
+        capacity = 0x8000UL;    /* 23LC256, 32KB */
+        TRACE("[SRAM] 32KB (23LC256) - capture clamped\r\n");
+    }
+}
+
+uint32_t sram_capacity(void) {
+    return capacity;
 }
 
 void sram_read(uint32_t addr, uint8_t *buf, uint16_t len) {

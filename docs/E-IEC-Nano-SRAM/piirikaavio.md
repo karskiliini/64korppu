@@ -429,77 +429,45 @@
   Viive: ~30ns (2 × 15ns).
 
 
-  Vaihtoehto C: aktiivinen pull-up transistorilla
-  ──────────────────────────────────────────────
+  Vaihtoehto C: aktiivinen pull-up transistorilla — POISTETTU
+  ──────────────────────────────────────────────────────────
 
-  Ongelma: passiivinen pull-up -vastus (150Ω-1.5kΩ) ei voi olla
-  sekä tarpeeksi pieni (nopea nousu) että tarpeeksi suuri
-  (asema pystyy vetämään linjan alle 0.9V pulssin aikana).
+  ⚠ VAROITUS: Tässä aiemmin kuvatut transistorikytkennät olivat
+  sähköisesti virheellisiä — ÄLÄ RAKENNA NIITÄ:
 
-  Ratkaisu: NPN-transistori toimii aktiivisena pull-upina joka
-  vetää linjaa vahvasti HIGH-tilaan lepotilassa, mutta sammuu
-  pulssin aikana eikä vastusta aseman open-collector -vetoa.
+  1. "Common-emitter pull-up" (kanta 10kΩ → +5V, emitteri → GND,
+     kollektori /RDATA-linjalle): NPN johtaa AINA (kanta ~0.7V,
+     emitteri maissa) ja sen kollektori vetää linjaa ALAS, ei ylös.
+     Linja jumittuu pysyvästi ~0.2V:iin → signaali kuolee kokonaan.
+     Kuvattu "transistori sammuu pulssin aikana" -toiminta ei vastaa
+     transistorin fysiikkaa.
 
-              +5V
-               │
-              1kΩ  (R_c, kollektorivastus)
-               │
-               ├─────────────────── /RDATA-linja ── 74LS14 pin 1
-               │                         │
-           C ──┤ 2N3904 (NPN)            │
-               │                     Floppy /RDATA
-           E ──┤                     (open-collector)
-               │
-              GND
-               │
-           B ──┤
-               │
-              10kΩ (R_b, kantavastus)
-               │
-               ├── +5V
+  2. "Emitteriseuraaja" kollektori maihin kytkettynä: transistori
+     toimii käänteisaktiivisella alueella (β ~2-5) eikä seuraajana.
+     Oikeassa emitteriseuraajassa kollektorin pitää olla +5V:ssä —
+     mutta silloin emitteri ei voi seurata linjaa alas, joten
+     sekään ei sovi open-collector-väylälle.
 
-  Toiminta:
-    Lepotila: R_b vetää kannan HIGH → transistori ON → kollektori
-    vetää /RDATA-linjaa aktiivisesti kohti +5V (nopea nousu).
-    Nousuaika riippuu R_c:stä ja kuormasta, tyypillisesti ~10-20ns.
+  Oikea ratkaisu: aktiivista pull-upia EI TARVITA.
+  ────────────────────────────────────────────────
 
-    Pulssin aikana: floppy-aseman OC-transistori vetää linjan LOW.
-    NPN:n emitteri on GND:ssä, kollektori on /RDATA-linjalla.
-    Kun linja putoaa alle ~0.7V, NPN:n VCE < VBE → transistori
-    sammuu (saturoituu "väärin päin"). Asema pystyy vetämään
-    linjan 0V:iin koska NPN ei enää vastusta.
+  "Passiivinen pull-up ei riitä" -päätelmä perustui mittauksiin,
+  joissa pullonkaula oli capture-ISR:n palveluaika, ei analogia
+  (ks. mfm-dekoodaus.md, KORJAUS-osio). Käytännössä:
 
-    Vaihtoehtoinen kytkentä (emitteriseuraajapohjaiinen):
+    - 1kΩ pull-up +5V:iin on PC-emolevyjen standardiratkaisu.
+      Nousuaika ~100pF kuormalla on ~100ns → reilusti riittävä
+      HD-signaalille (pulssiväli 2µs).
+    - 150Ω vaatii asemalta 33mA nieluvirran — osa asemista ei
+      kykene tähän (heikko ajuri) jolloin LOW-taso jää liian
+      ylös. Vältä.
+    - 10kΩ (PCB:n R11) on turhan löysä pitkillä kaapeleilla,
+      mutta ei estä toimintaa: mitattava laskeva reuna on aseman
+      itsensä vetämä ja siten terävä. Suositus: vaihda 1kΩ:iin.
 
-              +5V
-               │
-              10kΩ (R_b)
-               │
-           B ──┤ 2N3904
-               │
-           C ──┤── GND
-               │
-           E ──┤
-               │
-               ├── /RDATA-linja ── 74LS14 pin 1
-               │
-           Floppy /RDATA (open-collector)
-
-    Emitteriseuraaja: V_out ≈ V_base - 0.7V ≈ 4.3V lepotilassa.
-    Kun floppy vetää linjaa alas, emitteri seuraa → nopea lasku.
-    Emitteriseuraajan ulostuloresistanssi on matala (~20Ω) →
-    erittäin nopea nousu takaisin ilman erillistä pull-up-vastusta.
-    Mutta: max V_out = 4.3V (ei täyttä 5V). Riittää 74LS14:lle
-    jonka positiivinen kynnys on 1.7V.
-
-  Komponentit:
-    - 2N3904 NPN-transistori (tai BC547, yleinen NPN)
-    - 10kΩ vastus (kanta)
-    - 1kΩ vastus (kollektori, vaihtoehto 1)
-
-  Oloskooppilla todennettavat parametrit:
+  Oloskoopilla todennettavat parametrit:
     - /RDATA-pulssin alareuna: < 0.5V (asema vetää kunnolla)
-    - Nousuaika: < 100ns (0.3V → 1.7V)
+    - Pulssiväli HD-levyllä: 2 / 3 / 4 µs (2T/3T/4T)
     - Pulssin leveys: ~150-250ns
     - Intervallien jitteri: < ±5 tikkiä (±312ns)
 

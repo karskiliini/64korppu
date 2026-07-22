@@ -12,3 +12,11 @@ TEST.D64
 # IEC bridge binary
 vice/iec_bridge
 vice/iec_bridge.dSYM/
+
+# Nano test binaries
+test_nano_fat12
+test_nano_fastload
+test_nano_shiftreg
+test_nano_lz4
+test_mfm_sync
+test_*.dSYM/

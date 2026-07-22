@@ -31,8 +31,9 @@ static bool dir_active = false;
  * Compressed transfer state.
  * Raw and frame buffers are in external SRAM (SRAM_COMP_RAW / SRAM_COMP_FRAME),
  * not in internal RAM. Only the state variables live here (~8 bytes).
- * During compression, lz4_compress_block allocates the hash table on the stack
- * (COMPRESS_HASH_SIZE × 2 = 512 bytes, temporarily).
+ * During compression the stack transiently holds raw(128) + frame(172)
+ * buffers plus lz4's hash table (COMPRESS_HASH_SIZE × 2 = 256 bytes),
+ * ~556 bytes total — sized to fit the 2KB RAM (see config.h).
  */
 static uint16_t comp_raw_pos;
 static uint16_t comp_frame_len;
@@ -279,7 +280,14 @@ void cbm_dos_close(uint8_t sa) {
  */
 static bool comp_read_raw_byte(uint8_t *out) {
     if (dir_active) {
-        if (dir_pos >= dir_len) return false;
+        if (dir_pos >= dir_len) {
+            /* Exhausted: clear the flag here too — the uncompressed
+             * path clears it in cbm_dos_talk_byte, but this path
+             * didn't, so the NEXT compressed LOAD saw a spent
+             * directory source and returned an empty file. */
+            dir_active = false;
+            return false;
+        }
         sram_read(SRAM_DIR_BUF + dir_pos, out, 1);
         dir_pos++;
         return true;
@@ -293,8 +301,8 @@ static bool comp_read_raw_byte(uint8_t *out) {
 
 /*
  * Compress raw data from SRAM_COMP_RAW and write framed output to SRAM_COMP_FRAME.
- * Uses stack-allocated temporary buffers (~1068 bytes) only during this call.
- * Returns frame length, or -1 on failure.
+ * Uses stack-allocated temporary buffers (~300 bytes + lz4 hash table)
+ * only during this call. Returns frame length, or -1 on failure.
  */
 static int compress_block_via_sram(uint16_t raw_len) {
     uint8_t raw[COMPRESS_BLOCK_SIZE];
@@ -309,12 +317,13 @@ static int compress_block_via_sram(uint16_t raw_len) {
 }
 
 /*
- * Compressed talk: accumulate raw bytes into SRAM_COMP_RAW (512-byte blocks),
- * compress + frame each block to SRAM_COMP_FRAME, then drain byte-by-byte.
- * After the last data frame, send a 2-byte EOF marker (0x0000).
+ * Compressed talk: accumulate raw bytes into SRAM_COMP_RAW
+ * (COMPRESS_BLOCK_SIZE blocks), compress + frame each block to
+ * SRAM_COMP_FRAME, then drain byte-by-byte. After the last data
+ * frame, send a 2-byte EOF marker (0x0000).
  *
  * Buffers are in external SRAM — only state variables use internal RAM.
- * During the compress call, ~1068 bytes of stack are used temporarily.
+ * During the compress call ~556 bytes of stack are used temporarily.
  */
 static bool cbm_dos_talk_byte_compressed(uint8_t sa, uint8_t *byte, bool *eoi) {
     (void)sa;

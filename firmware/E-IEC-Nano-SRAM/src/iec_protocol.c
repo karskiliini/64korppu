@@ -28,8 +28,11 @@ static iec_device_t device = {0};
 static volatile bool atn_pending = false;
 static bool reset_held = false;  /* Edge detection for /RESET */
 
-/* Pin manipulation macros */
-#define IEC_ASSERT(pin)   do { IEC_DDR |= (1 << (pin)); IEC_PORT &= ~(1 << (pin)); } while(0)
+/* Pin manipulation macros.
+ * Assert order matters: clear PORT BEFORE setting DDR — the other way
+ * round the pin drives HIGH for a moment (PORT still 1 from the
+ * pull-up), actively fighting any device pulling the line low. */
+#define IEC_ASSERT(pin)   do { IEC_PORT &= ~(1 << (pin)); IEC_DDR |= (1 << (pin)); } while(0)
 #define IEC_RELEASE(pin)  do { IEC_DDR &= ~(1 << (pin)); IEC_PORT |= (1 << (pin)); } while(0)
 #define IEC_IS_LOW(pin)   (!(IEC_PINR & (1 << (pin))))
 
@@ -102,59 +105,92 @@ void iec_release_all(void) {
     IEC_RELEASE(IEC_PIN_DATA);
 }
 
+/*
+ * Receive one command byte while ATN is asserted (we are listener,
+ * C64 is talker).
+ *
+ * IEC bit timing: the talker changes DATA while CLK is LOW and the
+ * bit is valid when CLK is RELEASED (high) — so sample on the CLK
+ * high phase. (The old code sampled on the CLK low phase and caught
+ * a phantom first bit, garbling every command byte.)
+ */
 bool iec_receive_byte_atn(uint8_t *byte) {
     *byte = 0;
 
-    /* Signal ready by asserting DATA */
+    /* Hold DATA (device-present ack) until the talker is ready */
     IEC_ASSERT(IEC_PIN_DATA);
-    _delay_us(IEC_TIMING_LISTENER_HOLD);
 
-    /* Wait for controller to release CLK */
+    /* Wait for talker to release CLK = ready-to-send.
+     * If ATN is released here, the command phase is over. */
     uint16_t timeout = 0;
     while (IEC_IS_LOW(IEC_PIN_CLK)) {
         _delay_us(1);
-        if (++timeout > IEC_TIMEOUT_US) { IEC_RELEASE(IEC_PIN_DATA); return false; }
+        if (!IEC_IS_LOW(IEC_PIN_ATN)) return false;
+        if (++timeout > IEC_TIMEOUT_US) return false;
     }
 
-    /* Release DATA */
+    /* Signal ready-for-data */
     IEC_RELEASE(IEC_PIN_DATA);
 
-    /* Receive 8 bits, LSB first */
+    /* Receive 8 bits, LSB first: wait CLK low (talker sets the bit),
+     * wait CLK high (bit valid), sample. */
     for (int bit = 0; bit < 8; bit++) {
-        /* Wait for CLK asserted */
         timeout = 0;
         while (!IEC_IS_LOW(IEC_PIN_CLK)) {
             _delay_us(1);
             if (++timeout > IEC_TIMEOUT_US) { iec_release_all(); return false; }
         }
-
-        /* Read data bit */
-        if (!IEC_IS_LOW(IEC_PIN_DATA)) {
-            *byte |= (1 << bit);
-        }
-
-        /* Wait for CLK released */
         timeout = 0;
         while (IEC_IS_LOW(IEC_PIN_CLK)) {
             _delay_us(1);
             if (++timeout > IEC_TIMEOUT_US) { iec_release_all(); return false; }
         }
+        if (!IEC_IS_LOW(IEC_PIN_DATA)) {
+            *byte |= (1 << bit);
+        }
     }
 
-    /* Acknowledge */
+    /* Talker pulls CLK low to end the byte; ack within 1ms */
+    timeout = 0;
+    while (!IEC_IS_LOW(IEC_PIN_CLK)) {
+        _delay_us(1);
+        if (++timeout > IEC_TIMEOUT_US) { iec_release_all(); return false; }
+    }
     IEC_ASSERT(IEC_PIN_DATA);
-    _delay_us(IEC_TIMING_BETWEEN_BYTES);
 
     return true;
 }
 
+/*
+ * Receive one data byte (we are listener, C64 is talker, ATN high).
+ *
+ * Sequence: the talker RELEASES CLK when ready to send (between bytes
+ * it holds CLK low). We release DATA = ready-for-data, then wait for
+ * CLK to go low = transfer starting. If that takes > 200µs, it is the
+ * EOI signal: ack with a >=60µs DATA pulse, then keep waiting.
+ * Bits are valid on the CLK high phase (see iec_receive_byte_atn).
+ *
+ * The old code had this backwards: it waited for "CLK asserted" at
+ * entry — but CLK is ALREADY low between bytes, so the wait fell
+ * straight through, EOI could never be detected, and the bit loop
+ * sampled on the wrong phase.
+ */
 bool iec_receive_byte(uint8_t *byte, bool *eoi) {
     *byte = 0;
     *eoi = false;
 
+    /* Wait for talker ready-to-send (CLK released) */
+    uint16_t timeout = 0;
+    while (IEC_IS_LOW(IEC_PIN_CLK)) {
+        _delay_us(1);
+        if (IEC_IS_LOW(IEC_PIN_ATN)) { iec_release_all(); return false; }
+        if (++timeout > IEC_TIMEOUT_US) { iec_release_all(); return false; }
+    }
+
+    /* Signal ready-for-data */
     IEC_RELEASE(IEC_PIN_DATA);
 
-    /* Wait for CLK asserted, with EOI detection */
+    /* Wait for transfer start (CLK low), detecting EOI at 200µs */
     uint16_t wait = 0;
     while (!IEC_IS_LOW(IEC_PIN_CLK)) {
         _delay_us(1);
@@ -164,7 +200,7 @@ bool iec_receive_byte(uint8_t *byte, bool *eoi) {
             _delay_us(IEC_TIMING_EOI_ACK);
             IEC_RELEASE(IEC_PIN_DATA);
 
-            uint16_t timeout = 0;
+            timeout = 0;
             while (!IEC_IS_LOW(IEC_PIN_CLK)) {
                 _delay_us(1);
                 if (++timeout > IEC_TIMEOUT_US) { iec_release_all(); return false; }
@@ -174,35 +210,48 @@ bool iec_receive_byte(uint8_t *byte, bool *eoi) {
         if (IEC_IS_LOW(IEC_PIN_ATN)) { iec_release_all(); return false; }
     }
 
-    /* Receive 8 bits */
+    /* Receive 8 bits, LSB first: bit valid on CLK high phase */
     for (int bit = 0; bit < 8; bit++) {
-        uint16_t timeout = 0;
-        while (!IEC_IS_LOW(IEC_PIN_CLK)) {
-            _delay_us(1);
-            if (++timeout > IEC_TIMEOUT_US) { iec_release_all(); return false; }
-        }
-
-        if (!IEC_IS_LOW(IEC_PIN_DATA)) {
-            *byte |= (1 << bit);
-        }
-
         timeout = 0;
         while (IEC_IS_LOW(IEC_PIN_CLK)) {
             _delay_us(1);
             if (++timeout > IEC_TIMEOUT_US) { iec_release_all(); return false; }
         }
+        if (!IEC_IS_LOW(IEC_PIN_DATA)) {
+            *byte |= (1 << bit);
+        }
+        timeout = 0;
+        while (!IEC_IS_LOW(IEC_PIN_CLK)) {
+            _delay_us(1);
+            if (++timeout > IEC_TIMEOUT_US) { iec_release_all(); return false; }
+        }
     }
 
+    /* Byte-complete ack */
     IEC_ASSERT(IEC_PIN_DATA);
     return true;
 }
 
+/*
+ * Send one data byte (we are talker, C64 is listener).
+ *
+ * Entry state: we hold CLK low (from turnaround or the previous byte).
+ * Ready handshake: RELEASE CLK = ready-to-send; the listener answers
+ * by releasing DATA. (The old code kept CLK asserted while waiting
+ * for DATA — the C64 waits for CLK high before releasing DATA, so
+ * both sides deadlocked and every talk-direction byte timed out.)
+ *
+ * EOI: before the last byte, simply don't pull CLK low — after 200µs
+ * the listener recognizes EOI and acks with a DATA low pulse.
+ * Non-EOI: pull CLK low well within the 200µs window.
+ *
+ * Bits: while CLK low set DATA, release CLK (bit valid), pull CLK low.
+ */
 bool iec_send_byte(uint8_t byte, bool eoi) {
-    IEC_ASSERT(IEC_PIN_CLK);
-    IEC_RELEASE(IEC_PIN_DATA);
-    _delay_us(IEC_TIMING_TALKER_SETUP);
+    /* Ready-to-send */
+    IEC_RELEASE(IEC_PIN_CLK);
 
-    /* Wait for listener ready */
+    /* Wait for listener ready (DATA released) */
     uint16_t timeout = 0;
     while (IEC_IS_LOW(IEC_PIN_DATA)) {
         _delay_us(1);
@@ -210,10 +259,9 @@ bool iec_send_byte(uint8_t byte, bool eoi) {
         if (IEC_IS_LOW(IEC_PIN_ATN)) return false;
     }
 
-    /* EOI signaling */
     if (eoi) {
-        IEC_RELEASE(IEC_PIN_CLK);
-
+        /* Let the 200µs EOI window elapse; listener acks by pulsing
+         * DATA low and releasing it again. */
         timeout = 0;
         while (!IEC_IS_LOW(IEC_PIN_DATA)) {
             _delay_us(1);
@@ -224,12 +272,13 @@ bool iec_send_byte(uint8_t byte, bool eoi) {
             _delay_us(1);
             if (++timeout > IEC_TIMEOUT_US) return false;
         }
-
-        IEC_ASSERT(IEC_PIN_CLK);
-        _delay_us(IEC_TIMING_TALKER_SETUP);
     }
 
-    /* Send 8 bits */
+    /* Begin transfer (must happen < 200µs after DATA high if !eoi) */
+    IEC_ASSERT(IEC_PIN_CLK);
+    _delay_us(IEC_TIMING_TALKER_SETUP);
+
+    /* Send 8 bits, LSB first */
     for (int bit = 0; bit < 8; bit++) {
         if (byte & (1 << bit)) {
             IEC_RELEASE(IEC_PIN_DATA);
@@ -246,7 +295,7 @@ bool iec_send_byte(uint8_t byte, bool eoi) {
 
     IEC_RELEASE(IEC_PIN_DATA);
 
-    /* Wait for listener acknowledge */
+    /* Wait for listener acknowledge (DATA low within ~1ms) */
     timeout = 0;
     while (!IEC_IS_LOW(IEC_PIN_DATA)) {
         _delay_us(1);
@@ -282,7 +331,26 @@ bool iec_error_talk_byte(uint8_t *byte, bool *eoi) {
     return true;
 }
 
+static void iec_service_inner(void);
+
+/*
+ * Reentrancy guard: iec_poll() is called from blocking floppy waits
+ * (seek settle, motor spin-up) which themselves run inside an
+ * in-progress iec_service() transfer. Re-entering the non-reentrant
+ * state machine mid-transfer corrupts it (e.g. ATN during seek), so
+ * nested calls are dropped — INT0 has already asserted DATA, and the
+ * outer service loop handles the command when it returns.
+ */
+static bool in_service = false;
+
 void iec_service(void) {
+    if (in_service) return;
+    in_service = true;
+    iec_service_inner();
+    in_service = false;
+}
+
+static void iec_service_inner(void) {
     /*
      * Bus reset: edge-triggered, not level-triggered.
      * /RESET LOW  → shutdown once, then idle (no reboot loop)
@@ -429,7 +497,18 @@ void iec_service(void) {
                 device.state = IEC_STATE_TALKER;
                 TRACE("[IEC] -> TALKER\r\n");
             }
+        } else if ((cmd & 0xF0) == IEC_CMD_SECOND) {
+            /* 0x60-0x6F: data channel select after LISTEN/TALK */
+            uint8_t sa = cmd & 0x0F;
+            TRACE(" SECOND SA=");
+            uart_putdec(sa);
+            TRACE("\r\n");
+            device.current_sa = sa;
         } else if ((cmd & 0xF0) == IEC_CMD_OPEN) {
+            /* 0xF0-0xFF: OPEN — filename follows as data bytes.
+             * Reset the channel so a fresh filename is collected;
+             * the old code never cleared `open`/`filename_len`, so
+             * every LOAD after the first was misrouted. */
             uint8_t sa = cmd & 0x0F;
             TRACE(" OPEN SA=");
             uart_putdec(sa);
@@ -438,12 +517,10 @@ void iec_service(void) {
 
             if (device.state == IEC_STATE_LISTENER) {
                 iec_channel_t *ch = &device.channels[0];
+                ch->open = false;
+                ch->filename_len = 0;
                 ch->buf_len = 0;
                 ch->buf_pos = 0;
-            } else if (device.state == IEC_STATE_TALKER) {
-                IEC_RELEASE(IEC_PIN_DATA);
-                _delay_us(IEC_TIMING_TALKER_SETUP);
-                IEC_ASSERT(IEC_PIN_CLK);
             }
         } else if ((cmd & 0xF0) == (IEC_CMD_CLOSE & 0xF0)) {
             uint8_t sa = cmd & 0x0F;
@@ -451,6 +528,8 @@ void iec_service(void) {
             uart_putdec(sa);
             TRACE("\r\n");
             cbm_dos_close(sa);
+            device.channels[0].open = false;
+            device.channels[0].filename_len = 0;
         } else {
             TRACE(" ??\r\n");
         }
@@ -458,8 +537,14 @@ void iec_service(void) {
 
     led_green_off();
 
-    /* ATN released — detect fast-load protocol for talker mode */
     if (device.state == IEC_STATE_TALKER) {
+        /* Talk-attention turnaround (after ATN release): roles swap —
+         * we take CLK as the new talker and release DATA; the C64
+         * holds DATA low as the new listener. */
+        IEC_ASSERT(IEC_PIN_CLK);
+        IEC_RELEASE(IEC_PIN_DATA);
+        _delay_us(IEC_TIMING_TALKER_SETUP);
+
         TRACE("[IEC] ATN released, detect fastload\r\n");
         fastload_detect();
         const fastload_protocol_t *fl = fastload_active();
@@ -467,6 +552,11 @@ void iec_service(void) {
             TRACE("[IEC] fastload active\r\n");
             fl->on_atn_end();
         }
+    } else if (device.state == IEC_STATE_IDLE) {
+        /* Command was for another device (or UNLISTEN) — stop holding
+         * DATA from the INT0 device-present ack, or the whole bus
+         * stays jammed low. */
+        iec_release_all();
     }
 
     if (device.state == IEC_STATE_LISTENER) {
@@ -500,7 +590,9 @@ void iec_service(void) {
                     ch->open = true;
                 }
             } else {
-                if (ch->buf_len < sizeof(ch->buffer)) {
+                /* Reserve one slot for the '\0' the UNLISTEN handler
+                 * appends before cbm_dos_execute_command(). */
+                if (ch->buf_len < sizeof(ch->buffer) - 1) {
                     ch->buffer[ch->buf_len++] = byte;
                 }
                 cbm_dos_listen_byte(device.current_sa, byte);

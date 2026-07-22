@@ -293,9 +293,12 @@ int fat12_read(fat12_file_t *file, uint8_t *buf, uint16_t count) {
         if (disk_read_sector(data_sector, sector_buf) != 0)
             return bytes_read > 0 ? (int)bytes_read : FAT12_ERR_IO;
 
-        /* Copy data from sector buffer */
+        /* Copy data from sector buffer. Clamp the 32-bit remainder
+         * instead of truncating: a plain (uint16_t) cast turns an
+         * exact multiple of 64KB into 0 → to_copy 0 → infinite loop. */
         uint16_t remaining_in_sector = FAT12_BYTES_PER_SECTOR - offset_in_cluster;
-        uint16_t remaining_in_file = (uint16_t)(file->file_size - file->position);
+        uint32_t rem32 = file->file_size - file->position;
+        uint16_t remaining_in_file = (rem32 > 0xFFFF) ? 0xFFFF : (uint16_t)rem32;
         uint16_t remaining_to_read = count - bytes_read;
         uint16_t to_copy = remaining_in_sector;
         if (to_copy > remaining_in_file) to_copy = remaining_in_file;
@@ -384,6 +387,25 @@ int fat12_write(fat12_file_t *file, const uint8_t *buf, uint16_t count) {
     while (bytes_written < count) {
         uint16_t offset_in_cluster = file->position % FAT12_BYTES_PER_SECTOR;
 
+        /*
+         * Extend the chain LAZILY, at the start of the write that
+         * crosses the cluster boundary. The old code extended at the
+         * end of a write only if MORE bytes remained in the SAME call
+         * — with byte-at-a-time writers (cbm_dos_listen_byte) that
+         * condition never fired, the chain never grew, and every SAVE
+         * > 512 bytes looped over one cluster (corrupt file).
+         */
+        if (offset_in_cluster == 0 && file->position > 0) {
+            int16_t next = fat12_find_free_cluster();
+            if (next < 0)
+                return bytes_written > 0 ? (int)bytes_written
+                                         : FAT12_ERR_DISK_FULL;
+
+            fat12_write_fat_entry(file->current_cluster, next);
+            fat12_write_fat_entry(next, FAT12_EOC);
+            file->current_cluster = next;
+        }
+
         /* If starting in middle of sector, read existing data */
         if (offset_in_cluster > 0) {
             uint16_t data_sector = FAT12_DATA_START + file->current_cluster - 2;
@@ -406,17 +428,6 @@ int fat12_write(fat12_file_t *file, const uint8_t *buf, uint16_t count) {
         bytes_written += to_write;
         file->position += to_write;
         file->modified = true;
-
-        /* Need next cluster? */
-        if (file->position % FAT12_BYTES_PER_SECTOR == 0 &&
-            bytes_written < count) {
-            int16_t next = fat12_find_free_cluster();
-            if (next < 0) return (int)bytes_written;
-
-            fat12_write_fat_entry(file->current_cluster, next);
-            fat12_write_fat_entry(next, FAT12_EOC);
-            file->current_cluster = next;
-        }
     }
 
     return (int)bytes_written;

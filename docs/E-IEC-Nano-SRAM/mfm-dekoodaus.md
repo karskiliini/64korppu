@@ -3,6 +3,22 @@
 Kattava dokumentaatio MFM (Modified Frequency Modulation) -dekoodauksesta
 PC 3.5" HD -floppy-asemasta Arduino Nanolla.
 
+> **KORJAUS (2026-07):** Tämän dokumentin aiemmat versiot sisälsivät
+> kaksi perustavaa virhettä, jotka on nyt korjattu:
+>
+> 1. **HD-intervallit olivat 2× väärin.** 500 kbit/s → databitti = 2µs,
+>    puolisolu T = 1µs. Flux-välit ovat 2T/3T/4T = **2/3/4 µs =
+>    32/48/64 tikkiä** @16MHz. Aiempi taulukko (64/96/128 tikkiä =
+>    4/6/8 µs) oli DD 250 kbit/s -ajoitus.
+> 2. **Mitatut "klusterit" (~107/133/155 tikkiä) olivat ISR:n oman
+>    palveluajan artefakteja.** C-kielinen capture-ISR SPI-siirtoineen
+>    kesti ~6-7 µs — enemmän kuin kolme HD 2T-väliä — joten ICR1
+>    ylikirjoittui ja pulssit sulautuivat. Havaittu minimi-intervalli
+>    ~107 tikkiä ≈ 6.7 µs on ISR:n kesto, ei levyn signaali. Koko
+>    "variable delay" -teoria ja pull-up-viiveen kalibrointi sovittivat
+>    tätä artefaktia. Kaappaus on nyt pollattu silmukka (keskeytykset
+>    pois), ~25-30 sykliä/reuna.
+
 ## Sisällys
 
 1. [MFM-perusteet](#mfm-perusteet)
@@ -34,15 +50,17 @@ MFM koodaa dataa pulssi-intervallien avulla. Jokainen databitti tuottaa 2 MFM-bi
 
 ### Intervallityypit
 
-Flux-transitioiden väli MFM:ssä on aina 2T, 3T tai 4T (T = yksi bittisolu):
+Flux-transitioiden väli MFM:ssä on aina 2T, 3T tai 4T (T = puolisolu
+= puoli databittiä):
 
 | Tyyppi | Nimellinen | HD 500kbps @ 16MHz |
 |--------|-----------|-------------------|
-| 2T     | 2 × 32 = 64 tikkiä  | ~4.0 µs |
-| 3T     | 3 × 32 = 96 tikkiä  | ~6.0 µs |
-| 4T     | 4 × 32 = 128 tikkiä | ~8.0 µs |
+| 2T     | 2 × 16 = 32 tikkiä | 2.0 µs |
+| 3T     | 3 × 16 = 48 tikkiä | 3.0 µs |
+| 4T     | 4 × 16 = 64 tikkiä | 4.0 µs |
 
-Bittisolu = 2 µs HD:lle (500 kbps datarate, 1 Mbps MFM clock).
+Databitti = 2 µs HD:lle (500 kbps datarate, 1 Mbps MFM clock),
+puolisolu T = 1 µs = 16 tikkiä.
 
 ### Tyypilliset tavujen intervallisekvenssit
 
@@ -111,6 +129,12 @@ Bittisolu = 2 µs HD:lle (500 kbps datarate, 1 Mbps MFM clock).
 
 **Havainto**: 74LS14 pienensi viiveen dramaattisesti (~109 → ~40 tikkiä) ja tuotti selkeämmät klusterit. Alempi kynnysarvo (1.7V vs 3.0V) laukaisee aikaisemmin signaalin nousussa.
 
+> **Jälkikäteistulkinta**: yllä olevat klusteriarvot (~106/133 jne.)
+> mitattiin ISR-pohjaisella capturella, jonka palveluaika (~107
+> tikkiä) dominoi mittausta — ne EIVÄT kuvaa levyn signaalia. Oikeat
+> HD-klusterit ovat 32/48/64 tikkiä. Schmitt-trigger on silti hyvä
+> lisä signaalin laadulle, mutta se ei ollut pullonkaula.
+
 **Kytkentä**: Kahden 74LS14-portin kautta (double inversion). Yksi piiri sisältää 6 porttia, joten 2 porttia yhdestä IC:stä riittää.
 
 ### 3. ICNC1 Noise Canceler -kokeilu
@@ -145,30 +169,47 @@ Timer1:n noise canceler (ICNC1) lisää 4 kellosyklin viiveen input captureen.
 
 ## Timer1 Input Capture
 
-ATmega328P Timer1 ICP1 kaappaa 16-bittisen aikaleiman jokaisella flux-transitiolla:
-
+ATmega328P Timer1 ICP1 nappaa 16-bittisen aikaleiman jokaisella
+flux-transitiolla. Kaappaus on **pollattu silmukka keskeytykset
+poissa** — EI ISR:
+	
 ```c
-ISR(TIMER1_CAPT_vect) {
-    uint16_t ts = ICR1;                    // Lue aikaleima (laitteisto tallentaa)
-    uint16_t interval = ts - prev_capture; // Laske intervalli
-    prev_capture = ts;
-    SPDR = (uint8_t)interval;              // Tallenna SRAM:iin SPI:n kautta
-    while (!(SPSR & (1 << SPIF)));         // Odota SPI valmis
-    capture_count++;
-    if (capture_count >= 50000) {
-        TIMSK1 &= ~(1 << ICIE1);          // Lopeta kaappaus
-        capture_done = true;
-    }
+cli();
+uint8_t prev8 = ICR1L;
+TIFR1 = (1 << ICF1);
+while (count < cap) {
+    while (!(TIFR1 & (1 << ICF1))) { /* + idle-timeout */ }
+    uint8_t now8 = ICR1L;             // 8-bit riittää: intervallit < 108
+    TIFR1 = (1 << ICF1);
+    uint8_t interval = now8 - prev8;
+    prev8 = now8;
+    while (!(SPSR & (1 << SPIF)));    // SPI-interlock (ei odota käytännössä)
+    SPDR = interval;                  // SRAM:iin sekventiaalikirjoituksella
+    count++;
 }
+sei();
 ```
+
+### Miksi ei ISR?
+
+C-kielinen ISR (prologi + ICR1 + SPI-siirto + 32-bit laskuri + epilogi)
+kestää ~90-110 sykliä ≈ 6-7 µs. HD-signaalissa reunoja tulee 2-4 µs
+välein, joten ISR hävisi reunoja jatkuvasti: ICR1 ylikirjoittui ja
+intervallit sulautuivat. Mitattu "2T-klusteri" ~107 tikkiä (6.7 µs)
+oli täsmälleen ISR:n palveluaika. Pollattu silmukka on ~25-30 sykliä
+(< 2 µs) per reuna, ja ICR1:n laitteistolatchi antaa vielä yhden
+intervallin verran pelivaraa.
 
 ### Kriittiset parametrit
 
 - **Kellotaajuus**: 16 MHz, ei prescaleria → 62.5 ns resoluutio
-- **ISR-kesto**: ~3 µs (sisältää SPI-siirron)
-- **Min. intervalli**: 2T ≈ 4 µs → ISR ehtii käsitellä
-- **Kaappausmäärä**: 50000 intervallia ≈ 1 kierros HD:llä
-- **Tallennus**: uint8_t (0-255) riittää, koska max 4T+delay < 200
+- **Silmukan kesto**: ~25-30 sykliä < 2 µs → pysyy HD 2T-tahdissa
+- **Min. intervalli**: 2T = 2 µs = 32 tikkiä
+- **Kaappausmäärä**: 50000 intervallia ≈ 0.7 kierrosta HD:llä
+  (~74000 transitiota/kierros); 23LC256:lla rajataan 32768:aan
+- **Tallennus**: uint8_t riittää (validit intervallit < 108 tikkiä)
+- **Keskeytykset**: pois koko kaappauksen ajan (~150 ms); ATN (INT0)
+  jää odottamaan ja palvellaan heti sei():n jälkeen
 
 ### Timer1-asetukset
 
@@ -198,33 +239,33 @@ Aiempi lähestymistapa luokitteli pulssin heti ISR:ssä (2T/3T/4T-koodiksi) ja p
 
 ## Kalibrointi
 
-### Analyyttinen delay-laskenta histogrammista
+### Analyyttinen kynnyslaskenta histogrammista
 
-Brute-force-kalibrointi hylättiin koska pisteytysalgoritmi tuotti vääriä tuloksia (väärä delay-arvo sai korkeamman pisteen kuin oikea). Analyyttinen laskenta on luotettavampi:
+Brute-force-kalibrointi hylättiin koska pisteytysalgoritmi tuotti
+vääriä tuloksia. Pollatun capturen puhtaalla datalla kalibrointi on
+suoraviivainen: klusterit ovat nimellispaikoillaan (32/48/64) ± pieni
+jitteri, eikä erillistä "delay"-arvoa ole (vakioviive kumoutuu
+intervallien erotuksessa).
 
-1. **Histogrammi**: Laske 500 intervallia 16 tikin binneihin (48-207)
-2. **Kaksi huippua**: Etsi 2 suurinta binniä → 2T- ja 3T-klusterien keskipisteet
-3. **Delay**: `delay = min(center_lo - 64, center_hi - 96) - 8`
-
-**Miksi `-8`**: Variable delay — 4T-intervalleilla viive on ~8-12 tikkiä pienempi kuin 2T/3T:llä (parempi recovery time). Ilman marginaalia 4T luokitellaan 3T:ksi.
-
-### Esimerkki mitatusta datasta
+1. **Histogrammi**: 8 tikin binnit alueella 24-103 (10 binniä)
+2. **Kaksi huippua**: 2 suurinta binniä → 2T- ja 3T-klusterien keskipisteet
+3. **Kynnykset**: klusterien puolivälit
 
 ```
-Histogrammi: 96-111=197 128-143=302
-Piikit: center_lo=104 (bin 96-111), center_hi=136 (bin 128-143)
-delay_2T = 104 - 64 = 40
-delay_3T = 136 - 96 = 40
-delay = min(40, 40) - 8 = 32
+thr_23   = (c2T + c3T) / 2          # ~40
+thr_34   = c3T + (c3T - c2T) / 2    # ~56
+thr_4max = thr_34 + (c3T - c2T)     # ~72
 ```
 
-### Luokittelurajat delay=32:lla
+### Luokittelurajat (nimellinen HD-signaali)
 
-| Raja | Intervalli | Solut |
-|------|-----------|-------|
-| 2T/3T | < 112 tikkiä | (interval-32+16)/32 < 3 |
-| 3T/4T | < 144 tikkiä | (interval-32+16)/32 < 4 |
-| 4T/inv | < 176 tikkiä | (interval-32+16)/32 < 5 |
+| Raja | Intervalli | Tyyppi |
+|------|-----------|--------|
+| noise | < 20 tikkiä | hylätään |
+| 2T | < 40 tikkiä | 2 solua |
+| 3T | < 56 tikkiä | 3 solua |
+| 4T | < 72-76 tikkiä | 4 solua |
+| inv | ≥ 76 tikkiä | hylätään |
 
 ---
 
@@ -310,33 +351,29 @@ Jos 0x4489-haku ei toimi (esim. 4T-intervallien luokittelu epäonnistuu), vaihto
 
 ---
 
-## Variable delay
+## Variable delay — historiallinen artefakti
 
-### Ilmiö
+### Mitä "variable delay" oikeasti oli
 
-Mitattu viive (tikkeinä) transitioiden välillä riippuu edellisestä intervallista:
+Aiemmat versiot havaitsivat, että mitattu viive riippui edellisestä
+intervallista (~30-42 tikkiä), ja rakensivat kalibroinnin tämän
+"muuttuvan viiveen" ympärille. Todellinen selitys: **ISR-pohjainen
+capture ei ehtinyt mukaan**. ISR kesti ~107 tikkiä; kun reunoja tuli
+tiheämmin, ICR1 ylikirjoittui ja mitattu intervalli oli usean oikean
+intervallin summa miinus ISR:n viivejäännökset. "Viiveen" riippuvuus
+edellisestä intervallista oli suoraa seurausta siitä, kuinka monta
+reunaa ehti saapua ISR:n ollessa varattuna.
 
-| Edellinen intervalli | Tyypillinen viive | Selitys |
-|---------------------|------------------|---------|
-| 2T (lyhyt) | ~42 tikkiä | Vähän recovery-aikaa → pidempi viive |
-| 3T (keskipitkä) | ~37 tikkiä | Keskiverto recovery |
-| 4T (pitkä) | ~30 tikkiä | Paljon recovery-aikaa → lyhyt viive |
+Pollatulla capturella ilmiötä ei ole: kiinteät kynnykset 40/56/76
+luokittelevat nimelliset 32/48/64-klusterit oikein.
 
-### Vaikutus luokitteluun
+### Miksi PLL olisi silti parempi
 
-Kiinteä delay-arvo ei luokittele kaikkia intervalleja oikein. Esimerkiksi delay=40:
-
-| Todellinen tyyppi | Mitattu (tikkiä) | delay=40 → cells | Oikein? |
-|-------------------|-----------------|-------------------|---------|
-| 2T | 106 | 2 | ✓ |
-| 3T | 133 | 3 | ✓ |
-| 4T | 149 | 3 | **✗ (pitäisi olla 4!)** |
-
-Ratkaisu: käytetään alempaa delay-arvoa (delay=32), joka huomioi 4T:n pienemmän viiveen.
-
-### Miksi PLL olisi parempi
-
-PC:n floppy-kontrollerit käyttävät **PLL:ää** (Phase-Locked Loop) joka jatkuvasti seuraa signaalin vaihetta. PLL sopeutuu variable delayyn automaattisesti. ATmega328P:lle PLL:n toteuttaminen ohjelmistollisesti on mahdollista mutta monimutkaista — ISR:ssä ei ole aikaa laskea PLL-päivityksiä.
+PC:n floppy-kontrollerit käyttävät **PLL:ää** joka seuraa signaalin
+vaihetta ja sopeutuu moottorin nopeusvaihteluun (±1-2%). Kiinteät
+kynnykset toimivat, koska klusterien väli (16 tikkiä) on suuri
+suhteessa jitteriin, mutta PLL antaisi lisämarginaalia huonokuntoisille
+levyille.
 
 ---
 
@@ -378,12 +415,19 @@ Jos histogrammissa EI näy lainkaan intervalleja > 143:
 - Mahdollinen HW-ongelma: signaaliketju suodattaa pitkät pulssit
 - Tai delay-arvo liian korkea → 4T luokitellaan 3T:ksi
 
-### 6. Motor spin-up timeout ei tarkoita virhettä
+### 6. Motor spin-up timeout
 
-`[FLP] motor spin-up timeout (no /RDATA)` — moottori käynnistyi mutta /RDATA-signaalia ei havaittu 500ms aikana. Tämä voi johtua:
+`[FLP] motor spin-up timeout (no /RDATA)` — moottori käynnistyi mutta
+/RDATA-aktiviteettia ei havaittu 1000ms aikana. Voi johtua:
 - Kelkka ei ole raidalla (korjaantuu recalibratessa)
-- 74LS14:n kynnys ei ylity (HW-ongelma)
-- /RDATA-kaapeli irti
+- /RDATA-kaapeli irti tai pull-up puuttuu
+- Levy puuttuu asemasta
+
+> **Huom**: aiempi versio tästä tarkistuksesta mittasi "intervalleja"
+> 1 ms välein otetuista ICR1-näytteistä — erotus oli aina ~16000
+> tikkiä, joten se tulosti "no /RDATA" myös täysin terveellä
+> signaalilla. Nykyinen versio laskee ICF1-aktiviteettia per 1 ms
+> -ikkuna, mikä toimii oikein.
 
 ---
 
@@ -395,23 +439,24 @@ Jos histogrammissa EI näy lainkaan intervalleja > 143:
 - [ ] 74LS14:n Vcc ja GND kytketty, bypass-kondensaattori (100nF)
 - [ ] Pull-up 150Ω, EI 10kΩ (vaikka kumpikaan ei vaikuta — 74LS14:n kynnys on ratkaiseva)
 
-### Kaappaus (ISR)
+### Kaappaus (pollattu)
 - [ ] Timer1: normal mode, no prescaler (CS10), no ICNC1
-- [ ] Capturen koko: 50000 intervallia ≈ 1 kierros HD
-- [ ] ISR tallentaa `(uint8_t)(ICR1 - prev_capture)` → SRAM SPI:llä
-- [ ] Intervallien tulee olla 0-255 alueella (HD MFM max ~170)
+- [ ] Capturen koko: 50000 intervallia ≈ 0.7 kierrosta HD
+      (23LC256:lla rajautuu 32768:aan — sram_capacity())
+- [ ] Pollattu silmukka (cli/sei), ~26 sykliä/reuna — EI ISR
+- [ ] Intervallit uint8_t; validit < 108 tikkiä
 
 ### Histogrammi
 - [ ] 2 selkeää klusteria näkyvissä (2T ja 3T)
-- [ ] 2T-klusteri: ~96-111 (center ~104 @ delay~40)
-- [ ] 3T-klusteri: ~128-143 (center ~136 @ delay~40)
-- [ ] min > 50, max < 200 (terve signaali)
+- [ ] 2T-klusteri: ~24-39 (center ~32)
+- [ ] 3T-klusteri: ~40-55 (center ~48)
+- [ ] 4T-häntä: ~56-71 (sync-alueet)
+- [ ] min > 20, max < 108 (terve signaali)
 
 ### Kalibrointi
-- [ ] Delay = min(d_2T, d_3T) - 8 (marginaali 4T:lle)
-- [ ] Tyypillinen delay 74LS14:n kanssa: 28-40
-- [ ] Rajat delay=32:lla: 2T/3T @ 112, 3T/4T @ 144
-- [ ] 4T-intervallit (~148-160) luokittuvat oikein 4T:ksi
+- [ ] Kynnykset klusterien puoliväleistä: ~40 / ~56 / ~72
+- [ ] Ei "delay"-käsitettä — vakioviive kumoutuu erotuksessa
+- [ ] 4T-intervallit (~64) luokittuvat oikein 4T:ksi
 
 ### Sync-haku
 - [ ] Raaka 0x4489 kuvio bittivirrassa (ei dekoodattu tavuarvo)
