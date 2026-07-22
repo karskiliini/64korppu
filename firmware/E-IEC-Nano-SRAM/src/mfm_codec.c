@@ -5,11 +5,18 @@
 #include "uart.h"
 
 #ifdef __AVR__
-
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <util/delay.h>
+#endif
 #include <string.h>
+
+/*
+ * File layout: the pure decode/calibration logic below compiles on
+ * BOTH AVR and host (unit tests exercise the exact same code paths);
+ * the capture and write sections at the bottom are AVR-only.
+ * Host builds provide mock sram_* functions (see test/mock_sram.c).
+ */
 
 /*
  * MFM codec for ATmega328P — raw interval architecture.
@@ -51,6 +58,11 @@
 
 static uint16_t capture_count;
 
+/* Test/host hooks: the capture loop sets this on AVR; host tests fill
+ * the mock SRAM directly and set the count through these. */
+void mfm_set_capture_count(uint16_t n) { capture_count = n; }
+uint16_t mfm_get_capture_count(void) { return capture_count; }
+
 /* ---- Calibration results (set after capture, used by decoder) ---- */
 
 static uint8_t cal_thr_23;    /* interval < thr_23  → 2T */
@@ -89,29 +101,11 @@ static uint16_t mfm_crc_sync_mark(uint8_t mark) {
     return mfm_crc16(hdr, 4, MFM_CRC_INIT);
 }
 
-/* ---- Init ---- */
+/* ---- Threshold defaults (common) ---- */
 
-void mfm_init(void) {
-    /* Timer1: Normal mode, no prescaler (16MHz clock, 62.5ns/tick) */
-    TCCR1A = 0;
-    TCCR1B = (1 << CS10);  /* No prescaler */
-
-    /*
-     * ICP1 input on PB0 (D8), falling edge trigger.
-     * The PCB routes /RDATA straight to D8 (active-low pulses), so the
-     * falling edge is the drive's sharp edge. NOTE: if a 74LS14/74HC14
-     * inverter is added in front of D8, switch to rising edge:
-     * TCCR1B |= (1 << ICES1);
-     */
-    TCCR1B &= ~(1 << ICES1);
-    /* ICNC1 disabled — the noise canceler's 4-tick fixed delay would
-     * cancel in the interval difference anyway. */
-
-    /* Capture interrupt permanently disabled — capture is polled */
-    TIMSK1 &= ~(1 << ICIE1);
-
-    /* Default calibration thresholds (nominal HD 32/48/64 ticks),
-     * overwritten from the histogram after the first capture. */
+/* Default calibration thresholds (nominal HD 32/48/64 ticks),
+ * overwritten from the histogram after the first capture. */
+void mfm_set_default_thresholds(void) {
     cal_thr_23   = MFM_THRESHOLD_SHORT;   /* 40 */
     cal_thr_34   = MFM_THRESHOLD_MEDIUM;  /* 56 */
     cal_thr_4max = MFM_THRESHOLD_LONG;    /* 76 */
@@ -122,29 +116,37 @@ void mfm_init(void) {
 /*
  * Analytical calibration: find the 2T and 3T cluster peaks from the
  * interval histogram and place classification thresholds at the
- * cluster midpoints. Histogram: 10 bins x 8 ticks from 24 to 103
- * (nominal HD clusters: 2T=32, 3T=48, 4T=64).
+ * cluster midpoints.
+ *
+ * Histogram: 10 bins x 8 ticks from 28 to 107. The base of 28 centers
+ * the nominal HD clusters (2T=32, 3T=48, 4T=64) INSIDE bins 0/2/4 —
+ * with a base of 24 the cluster centers would sit exactly on bin
+ * boundaries and timing jitter would split a cluster across two bins,
+ * skewing the peak search.
+ *
+ * The second peak is required to be at least 2 bins away from the
+ * first: adjacent-bin spill-over from the same cluster must not be
+ * mistaken for the other cluster.
  */
 static void mfm_calibrate(uint16_t *hist10) {
     uint8_t p1 = 0, p2 = 0;
     uint16_t c1 = 0, c2 = 0;
     for (uint8_t b = 0; b < 10; b++) {
-        if (hist10[b] > c1) {
-            p2 = p1; c2 = c1;
-            p1 = b; c1 = hist10[b];
-        } else if (hist10[b] > c2) {
-            p2 = b; c2 = hist10[b];
-        }
+        if (hist10[b] > c1) { p1 = b; c1 = hist10[b]; }
+    }
+    for (uint8_t b = 0; b < 10; b++) {
+        uint8_t dist = (b > p1) ? (b - p1) : (p1 - b);
+        if (dist >= 2 && hist10[b] > c2) { p2 = b; c2 = hist10[b]; }
     }
     /* Ensure p1 (lower bin) < p2 (upper bin) */
     if (p1 > p2) { uint8_t t = p1; p1 = p2; p2 = t; }
 
-    /* Bin centers: base(24) + bin*8 + 4 */
-    uint8_t center_lo = 28 + p1 * 8;  /* ≈ 2T cluster center (~32) */
-    uint8_t center_hi = 28 + p2 * 8;  /* ≈ 3T cluster center (~48) */
+    /* Bin centers: base(28) + bin*8 + 4 */
+    uint8_t center_lo = 32 + p1 * 8;  /* ≈ 2T cluster center (~32) */
+    uint8_t center_hi = 32 + p2 * 8;  /* ≈ 3T cluster center (~48) */
     uint8_t spacing = center_hi - center_lo;
 
-    if (spacing < 8 || spacing > 32) {
+    if (c2 == 0 || spacing < 12 || spacing > 24) {
         /* Degenerate histogram (bad capture) — keep current thresholds */
         TRACE("[MFM] cal: degenerate peaks ");
         uart_putdec(center_lo);
@@ -169,6 +171,75 @@ static void mfm_calibrate(uint16_t *hist10) {
     uart_putchar('/');
     uart_putdec(cal_thr_4max);
     TRACE("\r\n");
+}
+
+/*
+ * Build the interval histogram from the captured raw data in SRAM and
+ * recalibrate the classification thresholds. Common code: called by
+ * mfm_capture_track on AVR and directly by host tests.
+ */
+void mfm_calibrate_capture(void) {
+    uint16_t hist10[10] = {0};
+    uint16_t scan = (capture_count > 2000) ? 2000 : capture_count;
+    uint8_t vmin = 255, vmax = 0;
+
+    sram_begin_seq_read(SRAM_RAW_CAPTURE);
+    for (uint16_t i = 0; i < scan; i++) {
+        uint8_t v = sram_seq_read_byte();
+        if (v < vmin) vmin = v;
+        if (v > vmax) vmax = v;
+        if (v >= 28 && v < 108) {
+            uint8_t bin = (v - 28) / 8;
+            hist10[bin]++;
+        }
+    }
+    sram_end_seq();
+
+    TRACE("[MFM] range: min=");
+    uart_putdec(vmin);
+    TRACE(" max=");
+    uart_putdec(vmax);
+    TRACE("\r\n[MFM] hist:");
+    for (uint8_t b = 0; b < 10; b++) {
+        if (hist10[b] == 0) continue;
+        uart_putchar(' ');
+        uart_putdec(28 + (uint16_t)b * 8);
+        uart_putchar('-');
+        uart_putdec(28 + (uint16_t)(b + 1) * 8 - 1);
+        uart_putchar('=');
+        uart_putdec(hist10[b]);
+    }
+    TRACE("\r\n");
+
+    mfm_calibrate(hist10);
+}
+
+/* ================= AVR-only: init + capture ================= */
+
+#ifdef __AVR__
+
+/* ---- Init ---- */
+
+void mfm_init(void) {
+    /* Timer1: Normal mode, no prescaler (16MHz clock, 62.5ns/tick) */
+    TCCR1A = 0;
+    TCCR1B = (1 << CS10);  /* No prescaler */
+
+    /*
+     * ICP1 input on PB0 (D8), falling edge trigger.
+     * The PCB routes /RDATA straight to D8 (active-low pulses), so the
+     * falling edge is the drive's sharp edge. NOTE: if a 74LS14/74HC14
+     * inverter is added in front of D8, switch to rising edge:
+     * TCCR1B |= (1 << ICES1);
+     */
+    TCCR1B &= ~(1 << ICES1);
+    /* ICNC1 disabled — the noise canceler's 4-tick fixed delay would
+     * cancel in the interval difference anyway. */
+
+    /* Capture interrupt permanently disabled — capture is polled */
+    TIMSK1 &= ~(1 << ICIE1);
+
+    mfm_set_default_thresholds();
 }
 
 /* ---- Capture track ---- */
@@ -259,41 +330,6 @@ capture_end:
         return FLOPPY_ERR_TIMEOUT;
     }
 
-    /* Raw interval histogram: 8-tick bins from 24..103 (10 bins) */
-    uint16_t hist10[10] = {0};
-    {
-        uint16_t scan = (capture_count > 2000) ? 2000 : capture_count;
-        uint8_t vmin = 255, vmax = 0;
-
-        sram_begin_seq_read(SRAM_RAW_CAPTURE);
-        for (uint16_t i = 0; i < scan; i++) {
-            uint8_t v = sram_seq_read_byte();
-            if (v < vmin) vmin = v;
-            if (v > vmax) vmax = v;
-            if (v >= 24 && v < 104) {
-                uint8_t bin = (v - 24) / 8;
-                hist10[bin]++;
-            }
-        }
-        sram_end_seq();
-
-        TRACE("[MFM] range: min=");
-        uart_putdec(vmin);
-        TRACE(" max=");
-        uart_putdec(vmax);
-        TRACE("\r\n[MFM] hist:");
-        for (uint8_t b = 0; b < 10; b++) {
-            if (hist10[b] == 0) continue;
-            uart_putchar(' ');
-            uart_putdec(24 + (uint16_t)b * 8);
-            uart_putchar('-');
-            uart_putdec(24 + (uint16_t)(b + 1) * 8 - 1);
-            uart_putchar('=');
-            uart_putdec(hist10[b]);
-        }
-        TRACE("\r\n");
-    }
-
     /* Dump first 64 raw tick values for visual inspection */
     {
         sram_begin_seq_read(SRAM_RAW_CAPTURE);
@@ -307,11 +343,13 @@ capture_end:
         TRACE("\r\n");
     }
 
-    /* Analytical calibration from histogram peaks */
-    mfm_calibrate(hist10);
+    /* Histogram + threshold calibration (common code) */
+    mfm_calibrate_capture();
 
     return FLOPPY_OK;
 }
+
+#endif /* __AVR__ (init + capture) */
 
 /* ---- Decode (SRAM → sector data) ---- */
 
@@ -496,6 +534,10 @@ int mfm_find_sectors(mfm_sector_id_t *ids_out, int max_ids) {
 
     return found;
 }
+
+/* ================= AVR-only: write ================= */
+
+#ifdef __AVR__
 
 /* ---- Write sector ---- */
 

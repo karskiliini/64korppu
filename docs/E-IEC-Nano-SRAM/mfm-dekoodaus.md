@@ -247,7 +247,7 @@ suoraviivainen: klusterit ovat nimellispaikoillaan (32/48/64) ± pieni
 jitteri, eikä erillistä "delay"-arvoa ole (vakioviive kumoutuu
 intervallien erotuksessa).
 
-1. **Histogrammi**: 8 tikin binnit alueella 24-103 (10 binniä)
+1. **Histogrammi**: 8 tikin binnit alueella 28-107 (10 binniä; base 28 keskittää nimellisklusterit 32/48/64 binien sisään)
 2. **Kaksi huippua**: 2 suurinta binniä → 2T- ja 3T-klusterien keskipisteet
 3. **Kynnykset**: klusterien puolivälit
 
@@ -448,9 +448,9 @@ Jos histogrammissa EI näy lainkaan intervalleja > 143:
 
 ### Histogrammi
 - [ ] 2 selkeää klusteria näkyvissä (2T ja 3T)
-- [ ] 2T-klusteri: ~24-39 (center ~32)
-- [ ] 3T-klusteri: ~40-55 (center ~48)
-- [ ] 4T-häntä: ~56-71 (sync-alueet)
+- [ ] 2T-klusteri: bin 28-35 (center 32)
+- [ ] 3T-klusteri: bin 44-51 (center 48)
+- [ ] 4T-häntä: bin 60-67 (center 64, sync-alueet)
 - [ ] min > 20, max < 108 (terve signaali)
 
 ### Kalibrointi

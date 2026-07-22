@@ -26,6 +26,15 @@ uint16_t mfm_crc16(const uint8_t *data, uint16_t length, uint16_t crc);
 /* Capture raw MFM track from floppy to SRAM track buffer */
 int mfm_capture_track(void);
 
+/* Common (host-testable) pieces of the read path: threshold defaults,
+ * histogram-based recalibration and capture-count accessors. Host
+ * tests fill the mock SRAM with an interval stream, set the count and
+ * run the exact same calibrate+decode code the firmware uses. */
+void mfm_set_default_thresholds(void);
+void mfm_calibrate_capture(void);
+void mfm_set_capture_count(uint16_t n);
+uint16_t mfm_get_capture_count(void);
+
 /* Decode a sector from the captured track in SRAM */
 int mfm_decode_sector(uint8_t sector, uint8_t *data_out);
 

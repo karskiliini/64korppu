@@ -95,11 +95,32 @@ C64 ──[IEC / User port / Expansion port]──> Ohjain ──[34-pin]──>
 
 ## Testaus
 
-D64- ja CBM-DOS-koodi on testattavissa host-koneella (Linux/macOS) ilman Pico-laitteistoa:
+Kolme tasoa, kaikki ajettavissa ilman laitteistoa (Linux/macOS):
+
+**1. Host-yksikkötestit** — D64, CBMFS, FAT12, fastload, LZ4, MFM:
 
 ```bash
 cd test
-make test          # 27 yksikkötestiä D64-moduulille
+make test          # kaikki testisarjat (mm. test_mfm_decode: firmiksen
+                   # oikea MFM-dekoodauskoodi synteettistä HD-raitaa
+                   # vasten — jitter, moottorin nopeusvirhe, CRC-viat)
+```
+
+**2. SimAVR-emulaatio** — aito käännetty `floppy_reader.elf` ajetaan
+syklitarkasti virtuaalisen korppuaseman ja SPI-SRAMin kanssa; MFM-
+signaali syötetään ICP1-pinniin ja dekoodattu sektori verifioidaan
+tavulleen AVR:n RAMista:
+
+```bash
+cd tools/sim
+make test          # skenaariomatriisi: nominal, 23LC256, moottori
+                   # ±1.5%, jitteri ±125ns — PASS/FAIL per skenaario
+```
+
+**3. VICE IEC bridge** — CBM-DOS + D64 integraatio:
+
+```bash
+cd test
 make               # kääntää myös IEC bridge
 ./vice/iec_bridge  # käynnistä TCP-palvelin
 python3 vice/vice_test.py  # aja integraatiotestit toisessa terminaalissa

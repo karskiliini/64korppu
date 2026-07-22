@@ -278,11 +278,26 @@ int floppy_read_sector(uint8_t track, uint8_t side, uint8_t sector,
 
     /* Capture + decode with retry.
      * 1st attempt: uses default/previous thresholds, calibrates from raw data.
-     * 2nd+ attempts: uses calibrated thresholds from previous capture. */
+     * 2nd+ attempts: uses calibrated thresholds from previous capture.
+     *
+     * The capture window covers ~0.7 of a revolution, so the target
+     * sector can fall outside it. Because the attempt loop's timing is
+     * (nearly) deterministic, the start phase can correlate with the
+     * rotation and keep missing the same arc forever. A per-attempt
+     * delay of 13ms steps the start phase ~1/16 revolution (200ms/16)
+     * per retry, guaranteeing full rotational coverage across the 16
+     * attempts. */
     for (uint8_t attempt = 0; attempt < 16; attempt++) {
         TRACE("[FLP] attempt ");
         uart_putdec(attempt);
         TRACE(" capture...\r\n");
+
+        for (uint8_t d = 0; d < attempt; d++) {
+            for (uint8_t m = 0; m < 13; m++) {
+                _delay_ms(1);
+            }
+            iec_poll();
+        }
 
         rc = mfm_capture_track();
         if (rc != 0) {

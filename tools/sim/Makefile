@@ -1,47 +1,60 @@
-# 64korppu SimAVR Simulation
+# 64korppu SimAVR end-to-end floppy read test
 #
-# Requires: simavr (brew install simavr)
+# Requires: simavr (brew install osx-cross/avr/simavr)
+#           avr-gcc (brew install osx-cross/avr/avr-gcc@14 avr-binutils)
 #
 # Usage:
 #   make                    Build simulator
-#   make run                Build + run (1 second boot simulation)
-#   make run-verbose        Build + run with SPI trace
-#   make run-long           Build + run 5 seconds
-#   make clean              Remove build artifacts
+#   make firmware           Build floppy_reader.elf (AVR)
+#   make test               Run the full scenario matrix (PASS/FAIL)
+#   make run                Single nominal run
+#   make clean
 
 CC = cc
 CFLAGS = -Wall -Wextra -O2 -g
-CFLAGS += -I/opt/homebrew/include
+CFLAGS += -I/opt/homebrew/include -I../../test
 LDFLAGS = -L/opt/homebrew/lib -lsimavr -lelf -lm
 
-TARGET = sim_64korppu
-FIRMWARE = ../../firmware/E-IEC-Nano-SRAM/64korppu_nano_debug.elf
+# AVR toolchain (override like the firmware Makefile)
+AVR_GCC_DIR ?= /opt/homebrew/opt/avr-gcc@14
+OBJCOPY ?= /opt/homebrew/opt/avr-binutils/bin/avr-objcopy
+SIZE ?= /opt/homebrew/opt/avr-binutils/bin/avr-size
 
-.PHONY: all run run-verbose run-long firmware clean
+TARGET = sim_64korppu
+FIRMWARE = ../../firmware/E-IEC-Nano-SRAM/floppy_reader.elf
+
+.PHONY: all run test firmware clean
 
 all: $(TARGET)
 
-$(TARGET): sim_64korppu.c
+$(TARGET): sim_64korppu.c ../../test/mfm_track_gen.h
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 firmware:
-	cd ../../firmware/E-IEC-Nano-SRAM && \
-	avr-gcc -mmcu=atmega328p -DF_CPU=16000000UL -Os -g -Wall -std=c11 \
-		-ffunction-sections -fdata-sections -Iinclude -Wl,--gc-sections \
-		-o 64korppu_nano_debug.elf \
-		src/main.c src/sram.c src/shiftreg.c src/floppy_ctrl.c \
-		src/mfm_codec.c src/fat12.c src/iec_protocol.c src/cbm_dos.c \
-		src/fastload.c src/fastload_jiffydos.c src/fastload_burst.c \
-		src/fastload_epyx.c
+	$(MAKE) -C ../../firmware/E-IEC-Nano-SRAM reader \
+		AVR_GCC_DIR=$(AVR_GCC_DIR) OBJCOPY=$(OBJCOPY) SIZE=$(SIZE)
 
 run: $(TARGET) firmware
-	./$(TARGET) $(FIRMWARE) -t 1000
+	./$(TARGET) $(FIRMWARE) -t 15000 -reads 3
 
-run-verbose: $(TARGET) firmware
-	./$(TARGET) $(FIRMWARE) -t 1000 -v
-
-run-long: $(TARGET) firmware
-	./$(TARGET) $(FIRMWARE) -t 5000
+# Scenario matrix: nominal, 23LC256, slow/fast motor, jitter
+test: $(TARGET) firmware
+	@echo "=== [1/5] nominal (23LC512) ==="
+	./$(TARGET) $(FIRMWARE) -t 15000 -reads 3
+	@echo ""
+	@echo "=== [2/5] 23LC256 (32KB, address aliasing) ==="
+	./$(TARGET) $(FIRMWARE) -t 60000 -reads 2 -allow-err 3 -sram256
+	@echo ""
+	@echo "=== [3/5] motor +1.5% ==="
+	./$(TARGET) $(FIRMWARE) -t 30000 -reads 2 -allow-err 1 -speed-ppm 15000
+	@echo ""
+	@echo "=== [4/5] motor -1.5% ==="
+	./$(TARGET) $(FIRMWARE) -t 30000 -reads 2 -allow-err 1 -speed-ppm -15000
+	@echo ""
+	@echo "=== [5/5] jitter ±2 ticks (±125ns) ==="
+	./$(TARGET) $(FIRMWARE) -t 30000 -reads 2 -allow-err 1 -jitter 2
+	@echo ""
+	@echo "=== SimAVR scenario matrix: ALL PASS ==="
 
 clean:
 	rm -f $(TARGET)

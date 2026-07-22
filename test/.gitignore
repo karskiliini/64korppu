@@ -20,3 +20,4 @@ test_nano_shiftreg
 test_nano_lz4
 test_mfm_sync
 test_*.dSYM/
+test_mfm_decode
