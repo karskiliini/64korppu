@@ -55,7 +55,9 @@ vice/iec_bridge: vice/iec_bridge.c vice/mock_iec.c mock_fat12.c \
                   $(FIRMWARE_SRC)/d64.c $(FIRMWARE_SRC)/cbm_dos.c
 	$(CC) $(CFLAGS) $(INCLUDES) -Ivice -o $@ $^
 
-test: test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload test_nano_shiftreg test_nano_lz4 test_mfm_sync test_mfm_decode
+test: test_fat12_bounds test_nano_bounds test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload test_nano_shiftreg test_nano_lz4 test_mfm_sync test_mfm_decode
+	./test_fat12_bounds
+	./test_nano_bounds
 	@echo "=== Running D64 tests ==="
 	./test_d64
 	@echo ""
@@ -84,4 +86,11 @@ test: test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload test_na
 	./test_mfm_decode
 
 clean:
-	rm -f test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload test_nano_shiftreg test_nano_lz4 test_mfm_sync test_mfm_decode vice/iec_bridge
+	rm -f test_fat12_bounds test_nano_bounds test_d64 test_cbmfs test_format test_nano_fat12 test_nano_fastload test_nano_shiftreg test_nano_lz4 test_mfm_sync test_mfm_decode vice/iec_bridge
+
+# Reject untrusted disk clusters before memory or sector access.
+test_fat12_bounds: test_fat12_bounds.c $(FIRMWARE_SRC)/fat12.c
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^
+
+test_nano_bounds: test_fat12_bounds.c $(NANO_SRC)/fat12.c
+	$(CC) $(CFLAGS) -DNANO $(NANO_INCLUDES) -o $@ $^

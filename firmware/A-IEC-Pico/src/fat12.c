@@ -79,6 +79,7 @@ void fat12_unmount(void) {
 }
 
 uint16_t fat12_read_fat_entry(uint16_t cluster) {
+    if (cluster >= FAT12_TOTAL_CLUSTERS + 2) return FAT12_BAD;
     /*
      * FAT12 packs two 12-bit entries into 3 bytes:
      *   Byte offset = cluster * 3 / 2
@@ -101,6 +102,7 @@ uint16_t fat12_read_fat_entry(uint16_t cluster) {
 }
 
 void fat12_write_fat_entry(uint16_t cluster, uint16_t value) {
+    if (cluster >= FAT12_TOTAL_CLUSTERS + 2) return;
     uint16_t offset = cluster + (cluster / 2);
     value &= 0xFFF;
 
@@ -212,6 +214,8 @@ int fat12_read(fat12_file_t *file, uint8_t *buf, uint16_t count) {
     uint16_t bytes_read = 0;
 
     while (bytes_read < count && file->position < file->file_size) {
+        if (file->current_cluster < 2 || file->current_cluster >= FAT12_TOTAL_CLUSTERS + 2)
+            return FAT12_ERR_INVALID;
         /* Calculate position within current cluster */
         uint16_t cluster_offset = file->position % FAT12_BYTES_PER_SECTOR;
 
@@ -222,7 +226,7 @@ int fat12_read(fat12_file_t *file, uint8_t *buf, uint16_t count) {
 
         /* Copy data from sector */
         uint16_t remaining_in_sector = FAT12_BYTES_PER_SECTOR - cluster_offset;
-        uint16_t remaining_in_file = file->file_size - file->position;
+        uint32_t remaining_in_file = file->file_size - file->position;
         uint16_t remaining_requested = count - bytes_read;
         uint16_t to_copy = remaining_in_sector;
         if (to_copy > remaining_in_file) to_copy = remaining_in_file;
@@ -515,7 +519,7 @@ int fat12_format(const char *label) {
     bpb->num_heads = 2;
     bpb->drive_number = 0x00;
     bpb->boot_sig = 0x29;
-    bpb->volume_serial = 0x64C64FAT;  /* Fun serial number */
+    bpb->volume_serial = 0x64C64FA7;  /* Fun serial number */
 
     if (label) {
         memcpy(bpb->volume_label, label, 11);
