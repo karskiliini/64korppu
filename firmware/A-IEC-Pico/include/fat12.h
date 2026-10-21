@@ -123,6 +123,7 @@ typedef struct {
     uint16_t dir_entry_sector;   /* Sector containing directory entry */
     uint16_t dir_entry_offset;   /* Offset within sector */
     bool     write_mode;
+    bool     eof;
     bool     modified;
 } fat12_file_t;
 
